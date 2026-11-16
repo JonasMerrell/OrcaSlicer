@@ -157,6 +157,8 @@ public:
 
     // Configuration
     void configure_urls(AppConfig* app_config);
+    // Fork: true when profiles sync with a self-hosted filament hub instead of Orca Cloud.
+    bool is_self_hosted() const { return m_self_hosted; }
     void set_api_base_url(const std::string& url);
     void set_auth_base_url(const std::string& url);
     void set_cloud_base_url(const std::string& url);
@@ -455,6 +457,11 @@ private:
     std::map<std::string, std::string> auth_headers;
     mutable std::mutex headers_mutex;
     bool m_use_encrypted_token_file{false};
+    // Fork: self-hosted filament hub (JonasMerrell/filament-hub). A static bearer token replaces
+    // the Orca account; the sync protocol is unchanged.
+    bool        m_self_hosted{false};
+    std::string m_hub_token;
+    void        sign_in_self_hosted();
 
     // Member variables - auth state
     PkceBundle pkce_bundle;
