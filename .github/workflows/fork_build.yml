@@ -1,0 +1,39 @@
+# Fork only: "Build all" is disabled on forks (it has a schedule trigger), so this builds
+# Linux x64 and Windows x64 for pushes to the fork's branches and on demand.
+name: Fork build
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+      - 'jm/**'
+    paths-ignore:
+      - '**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: fork-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_linux:
+    if: github.repository != 'OrcaSlicer/OrcaSlicer'
+    uses: ./.github/workflows/build_check_cache.yml
+    with:
+      os: ubuntu-24.04
+      arch: ""
+      build-deps-only: false
+    secrets: inherit
+  build_windows:
+    if: github.repository != 'OrcaSlicer/OrcaSlicer'
+    permissions:
+      actions: write
+      contents: write
+      id-token: write
+    uses: ./.github/workflows/build_check_cache.yml
+    with:
+      os: windows-latest
+      arch: x64
+      compiler: clang
+      build-deps-only: false
+    secrets: inherit
