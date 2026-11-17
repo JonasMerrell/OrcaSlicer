@@ -597,6 +597,33 @@ void OrcaCloudServiceAgent::configure_urls(AppConfig* app_config)
     if (!pub_key.empty()) {
         auth_headers["apikey"] = pub_key;
     }
+
+    // Fork: a filament hub URL + token switches profile sync to the self-hosted server.
+    std::string hub_url   = app_config->get("filament_hub_url");
+    std::string hub_token = app_config->get("filament_hub_token");
+    boost::algorithm::trim(hub_url);
+    boost::algorithm::trim(hub_token);
+    while (!hub_url.empty() && hub_url.back() == '/')
+        hub_url.pop_back();
+    m_self_hosted = !hub_url.empty() && !hub_token.empty();
+    if (m_self_hosted) {
+        api_base_url   = hub_url;
+        auth_base_url  = hub_url;
+        cloud_base_url = hub_url;
+        m_hub_token    = hub_token;
+        BOOST_LOG_TRIVIAL(info) << "OrcaCloudServiceAgent: using self-hosted filament hub at " << hub_url;
+    }
+}
+
+void OrcaCloudServiceAgent::sign_in_self_hosted()
+{
+    // One fixed user id, so every install keeps its synced presets in the same user folder.
+    set_user_session(m_hub_token, "filament-hub", "filament-hub", "Filament hub", "", "", /*persist=*/false);
+    {
+        // The token never expires, so never try to refresh it.
+        std::lock_guard<std::mutex> lock(session_mutex);
+        session.expires_at = std::chrono::system_clock::now() + std::chrono::hours(24 * 365 * 10);
+    }
 }
 
 void OrcaCloudServiceAgent::set_api_base_url(const std::string& url) { api_base_url = url; }
@@ -683,6 +710,11 @@ static bool parse_stored_secret(const std::string& secret, std::string& out_refr
 
 int OrcaCloudServiceAgent::start()
 {
+    if (m_self_hosted) {
+        sign_in_self_hosted();
+        return BAMBU_NETWORK_SUCCESS;
+    }
+
     regenerate_pkce();
 
     // Attempt silent sign-in from stored refresh token
@@ -837,8 +869,8 @@ bool OrcaCloudServiceAgent::is_user_login()
 
 int OrcaCloudServiceAgent::user_logout(bool request)
 {
-    // Send logout request to backend if requested
-    if (request) {
+    // Send logout request to backend if requested (a filament hub has no session to end)
+    if (request && !m_self_hosted) {
         std::string token;
         std::string refresh_copy;
         {
@@ -900,6 +932,10 @@ std::string OrcaCloudServiceAgent::get_user_nickname()
 
 std::string OrcaCloudServiceAgent::build_login_cmd()
 {
+    // Fork: with a filament hub there is no login page; signing in just re-applies the token.
+    if (m_self_hosted && !is_user_login())
+        sign_in_self_hosted();
+
     // When already signed in, emit the homepage payload so the web UI
     // can flip to the logged-in state without re-opening the login flow.
     if (is_user_login()) {
@@ -981,7 +1017,12 @@ std::string OrcaCloudServiceAgent::get_refresh_token() const
     return session.refresh_token;
 }
 
-bool OrcaCloudServiceAgent::ensure_token_fresh(const std::string& reason) { return refresh_if_expiring(TOKEN_REFRESH_SKEW, reason); }
+bool OrcaCloudServiceAgent::ensure_token_fresh(const std::string& reason)
+{
+    if (m_self_hosted)
+        return is_user_login();
+    return refresh_if_expiring(TOKEN_REFRESH_SKEW, reason);
+}
 
 // ============================================================================
 // ICloudServiceAgent - Server Connectivity

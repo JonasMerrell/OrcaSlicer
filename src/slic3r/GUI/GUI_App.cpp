@@ -6,6 +6,7 @@
 #include "libslic3r/Technologies.hpp"
 #include "libslic3r/Platform.hpp"
 #include "GUI_App.hpp"
+#include "FilamentHub.hpp"
 #include "BBLTopbar.hpp"
 #include "Shortcuts.hpp"
 #include "DeviceCore/DevConfigUtil.h"
@@ -3648,6 +3649,8 @@ bool GUI_App::on_init_inner()
 
     copy_network_if_available();
     on_init_network();
+    // Fork: load the owned-filament list from the self-hosted filament hub, if one is set up.
+    FilamentHubInventory::instance().refresh_async();
 
     if (m_agent)
         plugin_mgr.set_cloud_agent(std::dynamic_pointer_cast<OrcaCloudServiceAgent>(m_agent->get_cloud_agent()));
