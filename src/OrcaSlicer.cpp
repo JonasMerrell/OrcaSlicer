@@ -7271,7 +7271,14 @@ int CLI::run(int argc, char **argv)
                                     if (export_gcode_html && !outfile_dir.empty() && gcode_result) {
                                         const DynamicPrintConfig& full = print_fff->full_print_config();
                                         GUI::GCodeHtmlInfo html_info;
-                                        html_info.title     = boost::filesystem::path(outfile).stem().string();
+                                        // Name the page after the model rather than plate_N.
+                                        html_info.title = boost::filesystem::path(outfile).stem().string();
+                                        if (!print_fff->objects().empty() && print_fff->objects().front()->model_object() != nullptr &&
+                                            !print_fff->objects().front()->model_object()->name.empty()) {
+                                            html_info.title = boost::filesystem::path(print_fff->objects().front()->model_object()->name).stem().string();
+                                            if (print_fff->objects().size() > 1)
+                                                html_info.title += " + " + std::to_string(print_fff->objects().size() - 1) + " more";
+                                        }
                                         html_info.generator = std::string(SLIC3R_APP_NAME) + " " + SoftFever_VERSION;
                                         if (const auto* opt = full.option<ConfigOptionString>("printer_settings_id"))
                                             html_info.printer = opt->value;
