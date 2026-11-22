@@ -40,7 +40,7 @@ std::vector<Points> all_paths(const WO::GenerateResult &result)
     std::vector<Points> out;
     for (const ExtrusionPaths &region : result.paths)
         for (const ExtrusionPath &path : region)
-            out.push_back(path.polyline.points);
+            out.push_back(path.polyline.to_polyline().points);
     return out;
 }
 
@@ -157,7 +157,8 @@ TEST_CASE("generate covers a cantilever with tagged wave paths", "[WaveOverhangs
             REQUIRE(path.wave_overhang);
             REQUIRE(path.role() == erOverhangPerimeter);
             REQUIRE(path.polyline.points.size() >= 2);
-            for (const Point &pt : path.polyline.points)
+            const Polyline path2d = path.polyline.to_polyline();
+            for (const Point &pt : path2d.points)
                 REQUIRE(island_grown.front().contains(pt));
         }
     }

@@ -142,7 +142,7 @@ namespace {
 using detail::reconnect_polylines;
 using detail::detect_overhang_corners;
 
-#define EXTRA_PERIMETER_OFFSET_PARAMETERS ClipperLib::jtSquare, 0.
+#define EXTRA_PERIMETER_OFFSET_PARAMETERS jtSquare, 0.
 
 template <class Fn>
 void for_each_boundary_point(const ExPolygon &expoly, Fn &&fn)
@@ -434,14 +434,14 @@ void tag_wave_overhang_paths(std::vector<ExtrusionPaths> &wave_paths)
 static ExtrusionPath make_wave_path(const Polyline &polyline, const Flow &flow)
 {
     ExtrusionPath path(erOverhangPerimeter, flow.mm3_per_mm(), flow.width(), flow.height());
-    path.polyline = polyline;
+    path.polyline = Polyline3(polyline);
     return path;
 }
 
 static ExtrusionPath make_wave_path(Polyline &&polyline, const Flow &flow)
 {
     ExtrusionPath path(erOverhangPerimeter, flow.mm3_per_mm(), flow.width(), flow.height());
-    path.polyline = std::move(polyline);
+    path.polyline = Polyline3(polyline);
     return path;
 }
 
@@ -503,17 +503,18 @@ void append_wave_fronts(ExtrusionPaths &overhang_region,
         for (auto it = support_paths.rbegin(); it != support_paths.rend(); ++it) {
             if (it->polyline.points.size() < 2)
                 continue;
+            const Polyline support_polyline = it->polyline.to_polyline();
 
             double score = 0.;
             for (const auto &[distance_along, weight] : samples) {
                 Point sample = point_at_distance(candidate, distance_along);
-                std::pair<int, Point> foot = foot_pt(it->polyline.points, sample);
+                std::pair<int, Point> foot = foot_pt(support_polyline.points, sample);
                 int seg_idx = foot.first;
-                if (seg_idx < 0 || size_t(seg_idx + 1) >= it->polyline.points.size())
+                if (seg_idx < 0 || size_t(seg_idx + 1) >= support_polyline.points.size())
                     continue;
 
-                const Point &a = it->polyline.points[size_t(seg_idx)];
-                const Point &b = it->polyline.points[size_t(seg_idx + 1)];
+                const Point &a = support_polyline.points[size_t(seg_idx)];
+                const Point &b = support_polyline.points[size_t(seg_idx + 1)];
                 const bool interior_projection = foot.second != a && foot.second != b;
                 const double distance_to_support = (sample - foot.second).cast<double>().norm();
                 const double normalized_support = std::max(0.0, 1.0 - distance_to_support / double(std::max<coord_t>(1, support_reach)));
@@ -581,10 +582,12 @@ void append_zig_zag_front_levels(ExtrusionPaths               &overhang_region,
 
         if (d_flip < d_keep)
             front.reverse();
+        // ExtrusionPath polylines are 3D here; wave lines are planar (z = 0).
+        const Polyline3 front3(front);
         if (current.last_point() == front.first_point())
-            current.polyline.append(front.points.begin() + 1, front.points.end());
+            current.polyline.append(front3.points.begin() + 1, front3.points.end());
         else
-            current.polyline.append(std::move(front));
+            current.polyline.append(front3);
     };
 
     std::function<void(size_t, size_t, bool)> follow_branch = [&](size_t level_idx, size_t front_idx, bool reverse_front) {
@@ -785,7 +788,7 @@ GenerateResult generate(const ExPolygons   &overhang_area,
                 if (trim_boundary.empty())
                     trim_boundary = wave_cover_polygons;
 
-                Polygons accumulated_region = intersection(offset(seeds, float(seed_expansion), jtRound, 0., ClipperLib::etOpenRound), wave_cover_polygons);
+                Polygons accumulated_region = intersection(offset(seeds, float(seed_expansion), jtRound, 0., etOpenRound), wave_cover_polygons);
                 if (accumulated_region.empty())
                     continue;
 

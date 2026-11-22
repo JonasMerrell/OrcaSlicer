@@ -1423,8 +1423,10 @@ static ExtrusionEntityCollection clip_inner_perimeters_in_zone(const ExtrusionEn
                 dst_paths.emplace_back(p);
                 continue;
             }
-            Polylines kept = diff_pl(Polylines{p.polyline}, clip_region);
-            if (kept.size() == 1 && kept.front().points == p.polyline.points) {
+            const Polyline p2d = p.polyline.to_polyline();
+            const coord_t  p_z = p.polyline.points.front().z();
+            Polylines kept = diff_pl(Polylines{p2d}, clip_region);
+            if (kept.size() == 1 && kept.front().points == p2d.points) {
                 dst_paths.emplace_back(p);
                 continue;
             }
@@ -1436,8 +1438,8 @@ static ExtrusionEntityCollection clip_inner_perimeters_in_zone(const ExtrusionEn
             // Shortening the centerline by half a width pulls those caps back so they end
             // right at the clip boundary, matching the wave's extrusion edge cleanly.
             const double half_w = scale_(double(p.width) * 0.5);
-            const Point &orig_a = p.polyline.points.front();
-            const Point &orig_b = p.polyline.points.back();
+            const Point &orig_a = p2d.points.front();
+            const Point &orig_b = p2d.points.back();
             auto is_orig_end = [&](const Point &pt) {
                 return (pt - orig_a).cast<double>().norm() < SCALED_EPSILON || (pt - orig_b).cast<double>().norm() < SCALED_EPSILON;
             };
@@ -1466,7 +1468,7 @@ static ExtrusionEntityCollection clip_inner_perimeters_in_zone(const ExtrusionEn
                         continue;
                 }
                 ExtrusionPath np(p);
-                np.polyline = std::move(pl);
+                np.polyline = Polyline3(pl, p_z);
                 dst_paths.emplace_back(std::move(np));
             }
         }
@@ -1511,12 +1513,12 @@ static ExtrusionEntityCollection clip_inner_perimeters_in_zone(const ExtrusionEn
             new_mp.inset_idx = ent->inset_idx;
             out.append(std::move(new_mp));
         } else if (const ExtrusionPath *path = dynamic_cast<const ExtrusionPath*>(ent)) {
-            Polylines kept = diff_pl(Polylines{path->polyline}, clip_region);
+            Polylines kept = diff_pl(Polylines{path->polyline.to_polyline()}, clip_region);
             for (Polyline &pl : kept) {
                 if (pl.points.size() < 2)
                     continue;
                 ExtrusionPath np(*path);
-                np.polyline = std::move(pl);
+                np.polyline = Polyline3(pl, path->polyline.points.front().z());
                 np.inset_idx = ent->inset_idx;
                 out.append(std::move(np));
             }
