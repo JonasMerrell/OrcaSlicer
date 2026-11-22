@@ -465,6 +465,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/PrebuildQueue.hpp
     GUI/FilamentHub.cpp
     GUI/FilamentHub.hpp
+    GUI/GCodeHtmlExport.cpp
+    GUI/GCodeHtmlExport.hpp
     GUI/Preferences.cpp
     GUI/Preferences.hpp
     GUI/PresetBundleDialog.cpp

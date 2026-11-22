@@ -1,5 +1,6 @@
 #include "libslic3r/libslic3r.h"
 #include "GCodeViewer.hpp"
+#include "GCodeHtmlExport.hpp"
 
 #include "libslic3r/BuildVolume.hpp"
 #include "libslic3r/Print.hpp"
@@ -3341,6 +3342,16 @@ void GCodeViewer::export_toolpaths_to_obj(const char* filename) const
     wxBusyCursor busy;
     ToolpathsObjExporter exporter(m_viewer);
     exporter.export_to(filename);
+}
+
+bool GCodeViewer::export_toolpaths_to_html(const char* filename, const GCodeHtmlInfo& info, std::string& error) const
+{
+    if (filename == nullptr || !has_data()) {
+        error = "There are no toolpaths to export.";
+        return false;
+    }
+    wxBusyCursor busy;
+    return export_gcode_html(m_viewer, info, resources_dir() + "/web/gcode_html/viewer.html", filename, error);
 }
 
 void GCodeViewer::load_shells(const Print& print, bool initialized, bool force_previewing)

@@ -571,6 +571,11 @@ std::vector<NativeCommand> build_command_catalog()
             plater->export_toolpaths_to_obj();
         return AppActionRunResult{AppActionRunResult::Level::Success};
     });
+    add_with_icon("export_toolpaths_html", L("Export Toolpaths as HTML"), L("Export"), "custom-gcode_gcode", [](const std::string&) {
+        if (Plater* plater = wxGetApp().plater())
+            plater->export_toolpaths_to_html();
+        return AppActionRunResult{AppActionRunResult::Level::Success};
+    });
     add_with_icon("export_config", L("Export Preset Bundle"), L("Export"), "save", [](const std::string&) {
         if (MainFrame* mf = wxGetApp().mainframe)
             mf->export_config();

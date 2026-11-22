@@ -1517,6 +1517,7 @@ public:
 
     bool has_toolpaths_to_export() const { return m_gcode_viewer.can_export_toolpaths(); }
     void export_toolpaths_to_obj(const char* filename) const { m_gcode_viewer.export_toolpaths_to_obj(filename); }
+    bool export_toolpaths_to_html(const char* filename, const GCodeHtmlInfo& info, std::string& error) const { return m_gcode_viewer.export_toolpaths_to_html(filename, info, error); }
 
     void mouse_up_cleanup();
 

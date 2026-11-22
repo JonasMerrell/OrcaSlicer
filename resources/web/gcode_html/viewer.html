@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>G-code preview</title>
+<!--
+  OrcaSlicer fork: "Export toolpaths as HTML". The slicer replaces the data placeholder below with
+  the toolpaths of the preview. Everything else is in this file, so it works offline.
+-->
+<style>
+:root {
+  --bg: #1d1f22;
+  --panel: rgba(36, 38, 42, 0.92);
+  --panel-border: #3a3d42;
+  --text: #e8e8e8;
+  --muted: #a0a4aa;
+  --accent: #00ae42;
+  --track: #4a4e55;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #e9eaec;
+    --panel: rgba(255, 255, 255, 0.94);
+    --panel-border: #d0d3d8;
+    --text: #222;
+    --muted: #5d6168;
+    --track: #c7cad0;
+    color-scheme: light;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.panel { position: fixed; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px;
+  padding: 10px 12px; backdrop-filter: blur(6px); }
+#info { top: 12px; left: 12px; max-width: min(360px, calc(100vw - 24px)); }
+#info h1 { font-size: 15px; margin: 0 0 4px; font-weight: 600; word-break: break-word; }
+#info .sub { color: var(--muted); }
+#side { top: 12px; right: 12px; width: 250px; max-height: calc(100vh - 150px); overflow-y: auto; }
+#side label.row { display: flex; align-items: center; gap: 8px; padding: 2px 0; cursor: pointer; }
+#side select { width: 100%; margin: 4px 0 8px; padding: 4px; background: transparent; color: var(--text);
+  border: 1px solid var(--panel-border); border-radius: 4px; }
+#side select option { background: var(--bg); }
+.section { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--panel-border); }
+.section:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.title { font-weight: 600; margin-bottom: 4px; }
+.legend-item { display: grid; grid-template-columns: 16px 14px 1fr auto; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer; }
+.legend-item.off { opacity: 0.4; }
+.legend-item .val { color: var(--muted); font-variant-numeric: tabular-nums; }
+.swatch { width: 14px; height: 14px; border-radius: 3px; border: 1px solid rgba(0,0,0,0.3); }
+.gradient { height: 12px; border-radius: 3px; margin: 4px 0 2px; }
+.gradient-labels { display: flex; justify-content: space-between; color: var(--muted); font-variant-numeric: tabular-nums; }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+button { background: transparent; color: var(--text); border: 1px solid var(--panel-border); border-radius: 4px;
+  padding: 3px 9px; cursor: pointer; font: inherit; }
+button:hover { border-color: var(--accent); }
+#bottom { left: 12px; right: 274px; bottom: 12px; }
+.slider-row { display: grid; grid-template-columns: 70px 1fr 170px; gap: 10px; align-items: center; }
+.slider-row + .slider-row { margin-top: 4px; }
+.slider-row .lbl { color: var(--muted); }
+.slider-row .val { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dual { position: relative; height: 22px; }
+.dual input { position: absolute; inset: 0; width: 100%; margin: 0; pointer-events: none; background: none; -webkit-appearance: none; appearance: none; }
+.dual input::-webkit-slider-thumb { pointer-events: auto; }
+.dual input::-moz-range-thumb { pointer-events: auto; }
+input[type=range] { accent-color: var(--accent); width: 100%; }
+.dual .track { position: absolute; left: 0; right: 0; top: 9px; height: 4px; border-radius: 2px; background: var(--track); }
+.dual .fill { position: absolute; top: 9px; height: 4px; border-radius: 2px; background: var(--accent); }
+#move-info { margin-top: 6px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow-x: auto; }
+#move-info b { color: var(--text); font-weight: 500; }
+#status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; color: var(--muted); pointer-events: none; }
+.hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+#toggle-side { display: none; }
+@media (max-width: 760px) {
+  #side { top: auto; bottom: 150px; left: 12px; right: 12px; width: auto; max-height: 40vh; }
+  #side.collapsed .collapsible { display: none; }
+  #toggle-side { display: inline-block; float: right; }
+  #bottom { right: 12px; }
+  .slider-row { grid-template-columns: 52px 1fr 92px; }
+  #info { max-width: calc(100vw - 24px); }
+}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="status">Loading toolpaths…</div>
+
+<div id="info" class="panel" hidden>
+  <h1 id="title"></h1>
+  <div class="sub" id="subtitle"></div>
+  <div class="sub" id="stats"></div>
+</div>
+
+<div id="side" class="panel" hidden>
+  <div class="section">
+    <button id="toggle-side" type="button">Hide</button>
+    <div class="title">Color by</div>
+    <select id="color-mode"></select>
+    <div id="legend" class="collapsible"></div>
+  </div>
+  <div class="section collapsible">
+    <div class="title">Show</div>
+    <label class="row"><input type="checkbox" id="show-travel"> Travel moves</label>
+    <label class="row"><input type="checkbox" id="show-wipe"> Wipes</label>
+    <label class="row"><input type="checkbox" id="show-bed" checked> Bed</label>
+    <label class="row"><input type="checkbox" id="show-marker" checked> Nozzle position</label>
+  </div>
+  <div class="section collapsible">
+    <div class="title">View</div>
+    <div class="buttons">
+      <button type="button" data-view="iso">Iso</button>
+      <button type="button" data-view="top">Top</button>
+      <button type="button" data-view="front">Front</button>
+      <button type="button" data-view="left">Left</button>
+      <button type="button" data-view="fit">Fit</button>
+    </div>
+    <div class="hint">Drag to rotate, right-drag or Shift-drag to pan, scroll to zoom. Arrow keys step layers and moves.</div>
+  </div>
+</div>
+
+<div id="bottom" class="panel" hidden>
+  <div class="slider-row">
+    <span class="lbl">Layers</span>
+    <div class="dual">
+      <div class="track"></div><div class="fill" id="layer-fill"></div>
+      <input type="range" id="layer-min" min="0" max="0" value="0" aria-label="Lowest layer">
+      <input type="range" id="layer-max" min="0" max="0" value="0" aria-label="Highest layer">
+    </div>
+    <span class="val" id="layer-val"></span>
+  </div>
+  <div class="slider-row">
+    <span class="lbl">Moves</span>
+    <input type="range" id="move" min="0" max="0" value="0" aria-label="Moves in the top layer">
+    <span class="val" id="move-val"></span>
+  </div>
+  <div id="move-info"></div>
+</div>
+
+<script>
+// Replaced by the slicer with the exported toolpaths.
+const ORCA_EXPORT = "__ORCA_GCODE_DATA__";
+</script>
+<script>
+"use strict";
+(async function main() {
+  const statusEl = document.getElementById("status");
+  const fail = (msg) => { statusEl.textContent = msg; };
+
+  if (typeof ORCA_EXPORT === "string") { fail("This page has no toolpaths in it."); return; }
+  const META = ORCA_EXPORT;
+  const canvas = document.getElementById("view");
+  const gl = canvas.getContext("webgl2", { antialias: true });
+  if (!gl) { fail("This browser has no WebGL 2, which the preview needs."); return; }
+  if (typeof DecompressionStream === "undefined") { fail("This browser is too old to open the preview (no DecompressionStream)."); return; }
+
+  // ---------------------------------------------------------------- data
+  let buffer;
+  try {
+    const bin = atob(META.data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; ++i) bytes[i] = bin.charCodeAt(i);
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+    buffer = await new Response(stream).arrayBuffer();
+  } catch (e) {
+    fail("Could not read the toolpaths: " + e.message);
+    return;
+  }
+  META.data = null;
+
+  const N = META.vertices;
+  const col = {};
+  for (const c of META.columns) {
+    switch (c.type) {
+      case "i32d": {
+        const src = new Int32Array(buffer, c.offset, c.count);
+        const out = new Int32Array(c.count);
+        let acc = 0;
+        for (let i = 0; i < c.count; ++i) { acc += src[i]; out[i] = acc; }
+        col[c.name] = out;
+        break;
+      }
+      case "u16": col[c.name] = new Uint16Array(buffer, c.offset, c.count); break;
+      case "u8": col[c.name] = new Uint8Array(buffer, c.offset, c.count); break;
+      case "f32": col[c.name] = new Float32Array(buffer, c.offset, c.count); break;
+    }
+  }
+  const T_EXTRUDE = META.move_types.extrude, T_TRAVEL = META.move_types.travel, T_WIPE = META.move_types.wipe;
+  const X = col.x, Y = col.y, Z = col.z, TYPE = col.type, ROLE = col.role, LAYER = col.layer;
+
+  // Layers: the vertex range of each layer, and its print time.
+  let layerCount = 0;
+  for (let i = 0; i < N; ++i) if (LAYER[i] + 1 > layerCount) layerCount = LAYER[i] + 1;
+  layerCount = Math.max(layerCount, 1);
+  const layerFirst = new Int32Array(layerCount).fill(-1);
+  const layerLast = new Int32Array(layerCount).fill(-1);
+  const layerTime = new Float64Array(layerCount);
+  for (let i = 0; i < N; ++i) {
+    const l = LAYER[i];
+    if (layerFirst[l] < 0) layerFirst[l] = i;
+    layerLast[l] = i;
+    layerTime[l] += col.time[i];
+  }
+  for (let l = 0; l < layerCount; ++l) {
+    if (layerFirst[l] < 0) { // empty layer: borrow the neighbour's end
+      const prev = l > 0 ? layerLast[l - 1] : 0;
+      layerFirst[l] = prev; layerLast[l] = prev;
+    }
+  }
+  const startTime = new Float64Array(N); // elapsed time at the end of each move
+  { let t = 0; for (let i = 0; i < N; ++i) { t += col.time[i]; startTime[i] = t; } }
+
+  // Segments: move i goes from vertex i-1 to vertex i and carries vertex i's properties.
+  let nExt = 0, nTravel = 0, nWipe = 0;
+  for (let i = 1; i < N; ++i) {
+    const t = TYPE[i];
+    if (t === T_EXTRUDE) ++nExt; else if (t === T_TRAVEL) ++nTravel; else if (t === T_WIPE) ++nWipe;
+  }
+  const extInst = new Float32Array(nExt * 8);  // start xyz, end xyz, width, height
+  const extRole = new Uint8Array(nExt);
+  const extVertex = new Int32Array(nExt);
+  const travelPos = new Float32Array(nTravel * 6), travelVertex = new Int32Array(nTravel);
+  const wipePos = new Float32Array(nWipe * 6), wipeVertex = new Int32Array(nWipe);
+  const bbMin = [Infinity, Infinity, Infinity], bbMax = [-Infinity, -Infinity, -Infinity];
+  {
+    let e = 0, tr = 0, wi = 0;
+    for (let i = 1; i < N; ++i) {
+      const t = TYPE[i];
+      const x0 = X[i - 1] / 1000, y0 = Y[i - 1] / 1000, z0 = Z[i - 1] / 1000;
+      const x1 = X[i] / 1000, y1 = Y[i] / 1000, z1 = Z[i] / 1000;
+      if (t === T_EXTRUDE) {
+        const o = e * 8;
+        extInst[o] = x0; extInst[o + 1] = y0; extInst[o + 2] = z0;
+        extInst[o + 3] = x1; extInst[o + 4] = y1; extInst[o + 5] = z1;
+        extInst[o + 6] = col.width[i] / 1000; extInst[o + 7] = col.height[i] / 1000;
+        extRole[e] = ROLE[i]; extVertex[e] = i; ++e;
+        if (x1 < bbMin[0]) bbMin[0] = x1; if (y1 < bbMin[1]) bbMin[1] = y1; if (z1 < bbMin[2]) bbMin[2] = z1;
+        if (x1 > bbMax[0]) bbMax[0] = x1; if (y1 > bbMax[1]) bbMax[1] = y1; if (z1 > bbMax[2]) bbMax[2] = z1;
+      } else if (t === T_TRAVEL || t === T_WIPE) {
+        const arr = t === T_TRAVEL ? travelPos : wipePos;
+        const k = t === T_TRAVEL ? tr : wi;
+        const o = k * 6;
+        arr[o] = x0; arr[o + 1] = y0; arr[o + 2] = z0; arr[o + 3] = x1; arr[o + 4] = y1; arr[o + 5] = z1;
+        if (t === T_TRAVEL) { travelVertex[tr++] = i; } else { wipeVertex[wi++] = i; }
+      }
+    }
+  }
+  if (!isFinite(bbMin[0])) { bbMin[0] = bbMin[1] = bbMin[2] = 0; bbMax[0] = bbMax[1] = bbMax[2] = 10; }
+
+  // ---------------------------------------------------------------- colors
+  const hexToRgb = (h) => { const v = parseInt(h.slice(1), 16); return [(v >> 16) & 255, (v >> 8) & 255, v & 255]; };
+  const RANGE_COLORS = [[11, 44, 122], [19, 89, 133], [28, 136, 145], [4, 214, 15], [170, 242, 0], [252, 249, 3],
+    [245, 206, 10], [227, 136, 32], [209, 104, 48], [194, 82, 60], [148, 38, 22]];
+  const rangeColor = (t) => {
+    t = Math.min(Math.max(t, 0), 1) * (RANGE_COLORS.length - 1);
+    const i = Math.min(Math.floor(t), RANGE_COLORS.length - 2), f = t - i;
+    const a = RANGE_COLORS[i], b = RANGE_COLORS[i + 1];
+    return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+  };
+  const roleColors = META.roles.map((r) => hexToRgb(r.color));
+  const toolColors = (META.tools.length ? META.tools : ["#c0c0c0"]).map(hexToRgb);
+  const cpColors = (META.color_prints.length ? META.color_prints : META.tools.length ? META.tools : ["#c0c0c0"]).map(hexToRgb);
+
+  const fmt = (v, d) => (Math.abs(v) >= 1000 ? v.toFixed(0) : v.toFixed(d));
+  const fmtTime = (s) => {
+    s = Math.round(s);
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    if (d) return `${d}d ${h}h ${m}m`;
+    if (h) return `${h}h ${m}m`;
+    if (m) return `${m}m ${sec}s`;
+    return `${sec}s`;
+  };
+
+  const RANGE_MODES = {
+    speed:        { label: "Speed", unit: "mm/s", digits: 0, value: (i) => col.feedrate[i] / 10 },
+    height:       { label: "Layer height", unit: "mm", digits: 2, value: (i) => col.height[i] / 1000 },
+    width:        { label: "Line width", unit: "mm", digits: 2, value: (i) => col.width[i] / 1000 },
+    flow:         { label: "Volumetric flow", unit: "mm³/s", digits: 1, value: (i) => (col.feedrate[i] / 10) * col.mm3_per_mm[i] },
+    layertime:    { label: "Layer time", unit: "s", digits: 0, value: (i) => layerTime[LAYER[i]], time: true },
+    fan:          { label: "Fan speed", unit: "%", digits: 0, value: (i) => col.fan[i] },
+    temperature:  { label: "Temperature", unit: "°C", digits: 0, value: (i) => col.temperature[i] },
+    acceleration: { label: "Acceleration", unit: "mm/s²", digits: 0, value: (i) => col.acceleration[i] },
+    pa:           { label: "Pressure advance", unit: "", digits: 3, value: (i) => col.pa[i] },
+  };
+  const MODES = [["feature", "Line type"], ["tool", "Filament"]];
+  if (META.color_prints.length > 1) MODES.push(["colorprint", "Color changes"]);
+  for (const k of Object.keys(RANGE_MODES)) MODES.push([k, RANGE_MODES[k].label]);
+
+  // Per-role totals for the legend.
+  const roleTime = new Float64Array(roleColors.length), roleCount = new Int32Array(roleColors.length);
+  for (let i = 1; i < N; ++i) if (TYPE[i] === T_EXTRUDE) { roleTime[ROLE[i]] += col.time[i]; roleCount[ROLE[i]]++; }
+  const toolsUsed = new Set();
+  for (let e = 0; e < nExt; ++e) toolsUsed.add(col.tool[extVertex[e]]);
+  const cpUsed = new Set();
+  for (let e = 0; e < nExt; ++e) cpUsed.add(col.color[extVertex[e]]);
+
+  let roleMask = 0;
+  for (let r = 0; r < roleColors.length; ++r) roleMask |= (1 << r);
+  roleMask >>>= 0;
+
+  // ---------------------------------------------------------------- GL setup
+  const compile = (vs, fs) => {
+    const mk = (type, src) => {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src); gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+      return s;
+    };
+    const p = gl.createProgram();
+    gl.attachShader(p, mk(gl.VERTEX_SHADER, vs)); gl.attachShader(p, mk(gl.FRAGMENT_SHADER, fs));
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    const u = {};
+    const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < n; ++i) { const info = gl.getActiveUniform(p, i); u[info.name] = gl.getUniformLocation(p, info.name); }
+    return { p, u };
+  };
+
+  const extProg = compile(`#version 300 es
+precision highp float; precision highp int;
+layout(location=0) in vec3 a_pos;
+layout(location=1) in vec3 a_nrm;
+layout(location=2) in vec3 i_start;
+layout(location=3) in vec3 i_end;
+layout(location=4) in vec2 i_wh;
+layout(location=5) in vec4 i_color;
+layout(location=6) in uint i_role;
+uniform mat4 u_vp;
+uniform uint u_mask;
+out vec3 v_color; out vec3 v_nrm; out vec3 v_world;
+void main() {
+  if (((u_mask >> i_role) & 1u) == 0u) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
+  vec3 d = i_end - i_start; float len = length(d);
+  vec3 dir = len > 1e-6 ? d / len : vec3(1.0, 0.0, 0.0);
+  vec3 side = cross(vec3(0.0, 0.0, 1.0), dir); float sl = length(side);
+  side = sl > 1e-4 ? side / sl : vec3(0.0, 1.0, 0.0);
+  vec3 up = cross(dir, side);
+  float w = max(i_wh.x, 0.05), h = max(i_wh.y, 0.02);
+  float ext = 0.25 * w;
+  float along = a_pos.x < 0.5 ? -ext : len + ext;
+  vec3 p = i_start + dir * along + side * (a_pos.y * w) + up * (a_pos.z * h);
+  v_nrm = normalize(dir * a_nrm.x + side * (a_nrm.y * h) + up * (a_nrm.z * w));
+  v_world = p; v_color = i_color.rgb;
+  gl_Position = u_vp * vec4(p, 1.0);
+}`, `#version 300 es
+precision highp float;
+in vec3 v_color; in vec3 v_nrm; in vec3 v_world;
+uniform vec3 u_eye;
+out vec4 o;
+void main() {
+  vec3 n = normalize(v_nrm);
+  vec3 v = normalize(u_eye - v_world);
+  if (dot(n, v) < 0.0) n = -n;
+  vec3 l = normalize(vec3(-0.45, -0.35, 0.82));
+  float diff = 0.30 + 0.45 * max(dot(n, l), 0.0) + 0.35 * max(dot(n, v), 0.0);
+  float spec = pow(max(dot(reflect(-l, n), v), 0.0), 24.0) * 0.12;
+  o = vec4(v_color * diff + spec, 1.0);
+}`);
+
+  const lineProg = compile(`#version 300 es
+precision highp float;
+layout(location=0) in vec3 a_pos;
+uniform mat4 u_vp; uniform float u_size;
+void main() { gl_Position = u_vp * vec4(a_pos, 1.0); gl_PointSize = u_size; }`, `#version 300 es
+precision highp float;
+uniform vec4 u_color; uniform int u_round;
+out vec4 o;
+void main() {
+  if (u_round == 1 && length(gl_PointCoord - vec2(0.5)) > 0.5) discard;
+  o = u_color;
+}`);
+
+  // Diamond prism like the slicer's preview: top, right, bottom and left corners of the cross
+  // section, plus flat end caps. x selects the start (0) or end (1) of the segment.
+  const prism = (() => {
+    const P = [[0, 0, 0], [0, 0.5, -0.5], [0, 0, -1], [0, -0.5, -0.5]]; // y lateral, z down
+    const N4 = [[1, 1], [1, -1], [-1, -1], [-1, 1]]; // face normal signs (side, up)
+    const v = [];
+    const push = (x, c, n) => v.push(x, c[1], c[2], n[0], n[1], n[2]);
+    for (let f = 0; f < 4; ++f) {
+      const a = P[f], b = P[(f + 1) % 4], n = [0, N4[f][0], N4[f][1]];
+      push(0, a, n); push(1, a, n); push(1, b, n);
+      push(0, a, n); push(1, b, n); push(0, b, n);
+    }
+    for (const [x, s] of [[0, -1], [1, 1]]) {
+      const n = [s, 0, 0];
+      push(x, P[0], n); push(x, P[1], n); push(x, P[2], n);
+      push(x, P[0], n); push(x, P[2], n); push(x, P[3], n);
+    }
+    return new Float32Array(v);
+  })();
+  const PRISM_VERTS = prism.length / 6;
+
+  const extVao = gl.createVertexArray();
+  gl.bindVertexArray(extVao);
+  const prismBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, prismBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, prism, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+  const instBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, extInst, gl.STATIC_DRAW);
+  const colorBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, nExt * 4, gl.DYNAMIC_DRAW);
+  const roleBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, roleBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, extRole, gl.STATIC_DRAW);
+  for (const loc of [2, 3, 4, 5, 6]) { gl.enableVertexAttribArray(loc); gl.vertexAttribDivisor(loc, 1); }
+  // WebGL 2 has no base instance: a range is drawn by moving the attribute offsets.
+  const bindInstances = (first) => {
+    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 32, first * 32);
+    gl.vertexAttribPointer(3, 3, gl.FLOAT, false, 32, first * 32 + 12);
+    gl.vertexAttribPointer(4, 2, gl.FLOAT, false, 32, first * 32 + 24);
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuf);
+    gl.vertexAttribPointer(5, 4, gl.UNSIGNED_BYTE, true, 4, first * 4);
+    gl.bindBuffer(gl.ARRAY_BUFFER, roleBuf);
+    gl.vertexAttribIPointer(6, 1, gl.UNSIGNED_BYTE, 1, first);
+  };
+  gl.bindVertexArray(null);
+
+  const makeLines = (data) => {
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    const b = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, b);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
+    gl.bindVertexArray(null);
+    return { vao, buf: b, count: data.length / 3 };
+  };
+  const travelLines = makeLines(travelPos);
+  const wipeLines = makeLines(wipePos);
+
+  // Bed: outline, a 10 mm grid inside its bounding box, and a fill.
+  const bed = META.bed && META.bed.length >= 3 ? META.bed : [[bbMin[0] - 10, bbMin[1] - 10], [bbMax[0] + 10, bbMin[1] - 10], [bbMax[0] + 10, bbMax[1] + 10], [bbMin[0] - 10, bbMax[1] + 10]];
+  const bedMin = [Infinity, Infinity], bedMax = [-Infinity, -Infinity];
+  for (const [x, y] of bed) { bedMin[0] = Math.min(bedMin[0], x); bedMin[1] = Math.min(bedMin[1], y); bedMax[0] = Math.max(bedMax[0], x); bedMax[1] = Math.max(bedMax[1], y); }
+  const bedOutline = [], bedGrid = [], bedFill = [];
+  for (let i = 0; i < bed.length; ++i) {
+    const a = bed[i], b = bed[(i + 1) % bed.length];
+    bedOutline.push(a[0], a[1], 0, b[0], b[1], 0);
+  }
+  for (let x = Math.ceil(bedMin[0] / 10) * 10; x <= bedMax[0]; x += 10) bedGrid.push(x, bedMin[1], -0.01, x, bedMax[1], -0.01);
+  for (let y = Math.ceil(bedMin[1] / 10) * 10; y <= bedMax[1]; y += 10) bedGrid.push(bedMin[0], y, -0.01, bedMax[0], y, -0.01);
+  for (const [x, y] of bed) bedFill.push(x, y, -0.02);
+  const bedOutlineLines = makeLines(new Float32Array(bedOutline));
+  const bedGridLines = makeLines(new Float32Array(bedGrid));
+  const bedFillTris = makeLines(new Float32Array(bedFill));
+  const marker = makeLines(new Float32Array(3));
+
+  // ---------------------------------------------------------------- state
+  const ui = {
+    mode: document.getElementById("color-mode"),
+    legend: document.getElementById("legend"),
+    showTravel: document.getElementById("show-travel"),
+    showWipe: document.getElementById("show-wipe"),
+    showBed: document.getElementById("show-bed"),
+    showMarker: document.getElementById("show-marker"),
+    layerMin: document.getElementById("layer-min"),
+    layerMax: document.getElementById("layer-max"),
+    layerFill: document.getElementById("layer-fill"),
+    layerVal: document.getElementById("layer-val"),
+    move: document.getElementById("move"),
+    moveVal: document.getElementById("move-val"),
+    moveInfo: document.getElementById("move-info"),
+  };
+  for (const [k, label] of MODES) {
+    const o = document.createElement("option"); o.value = k; o.textContent = label; ui.mode.appendChild(o);
+  }
+  ui.mode.value = MODES.some(([k]) => k === META.view) ? META.view : "feature";
+
+  const lowerBound = (arr, v) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < v) lo = m + 1; else hi = m; } return lo; };
+  const upperBound = (arr, v) => { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] <= v) lo = m + 1; else hi = m; } return lo; };
+
+  // ---------------------------------------------------------------- coloring + legend
+  const colorBytes = new Uint8Array(nExt * 4);
+  let rangeInfo = null;
+  function recolor() {
+    const mode = ui.mode.value;
+    rangeInfo = null;
+    if (RANGE_MODES[mode]) {
+      const m = RANGE_MODES[mode];
+      let lo = Infinity, hi = -Infinity;
+      for (let e = 0; e < nExt; ++e) {
+        const v = m.value(extVertex[e]);
+        if (v < lo) lo = v; if (v > hi) hi = v;
+      }
+      if (!isFinite(lo)) { lo = 0; hi = 0; }
+      const span = hi - lo;
+      for (let e = 0; e < nExt; ++e) {
+        const c = rangeColor(span > 0 ? (m.value(extVertex[e]) - lo) / span : 0.5);
+        colorBytes[e * 4] = c[0]; colorBytes[e * 4 + 1] = c[1]; colorBytes[e * 4 + 2] = c[2]; colorBytes[e * 4 + 3] = 255;
+      }
+      rangeInfo = { m, lo, hi };
+    } else {
+      for (let e = 0; e < nExt; ++e) {
+        const i = extVertex[e];
+        const c = mode === "tool" ? toolColors[col.tool[i] % toolColors.length]
+          : mode === "colorprint" ? cpColors[col.color[i] % cpColors.length]
+          : roleColors[ROLE[i]] || [128, 128, 128];
+        colorBytes[e * 4] = c[0]; colorBytes[e * 4 + 1] = c[1]; colorBytes[e * 4 + 2] = c[2]; colorBytes[e * 4 + 3] = 255;
+      }
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, colorBytes);
+    buildLegend();
+    requestRender();
+  }
+
+  function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  function buildLegend() {
+    const L = ui.legend;
+    L.textContent = "";
+    const mode = ui.mode.value;
+    if (rangeInfo) {
+      const { m, lo, hi } = rangeInfo;
+      const g = el("div", "gradient");
+      g.style.background = "linear-gradient(to right," + RANGE_COLORS.map((c) => `rgb(${c[0]},${c[1]},${c[2]})`).join(",") + ")";
+      L.appendChild(g);
+      const labels = el("div", "gradient-labels");
+      for (let k = 0; k <= 4; ++k) {
+        const v = lo + ((hi - lo) * k) / 4;
+        labels.appendChild(el("span", null, m.time ? fmtTime(v) : fmt(v, m.digits)));
+      }
+      L.appendChild(labels);
+      if (m.unit) L.appendChild(el("div", "hint", m.unit));
+      return;
+    }
+    if (mode === "feature") {
+      const total = roleTime.reduce((a, b) => a + b, 0) || 1;
+      roleColors.forEach((c, r) => {
+        if (!roleCount[r]) return;
+        const item = el("div", "legend-item" + ((roleMask >>> r) & 1 ? "" : " off"));
+        const cb = el("input"); cb.type = "checkbox"; cb.checked = !!((roleMask >>> r) & 1); cb.tabIndex = -1;
+        const sw = el("span", "swatch"); sw.style.background = META.roles[r].color;
+        item.append(cb, sw, el("span", null, META.roles[r].name), el("span", "val", `${fmtTime(roleTime[r])} · ${Math.round((roleTime[r] / total) * 100)}%`));
+        item.title = "Click to show or hide";
+        item.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          roleMask = (roleMask ^ (1 << r)) >>> 0;
+          buildLegend(); requestRender();
+        });
+        L.appendChild(item);
+      });
+      return;
+    }
+    const used = mode === "tool" ? toolsUsed : cpUsed;
+    const palette = mode === "tool" ? (META.tools.length ? META.tools : ["#c0c0c0"]) : (META.color_prints.length ? META.color_prints : META.tools);
+    [...used].sort((a, b) => a - b).forEach((t) => {
+      const item = el("div", "legend-item");
+      item.style.cursor = "default";
+      const sw = el("span", "swatch"); sw.style.background = palette[t % palette.length];
+      const name = mode === "tool" ? (META.filaments[t] || `Filament ${t + 1}`) : `Color ${t + 1}`;
+      item.append(el("span"), sw, el("span", null, name), el("span", "val", mode === "tool" ? `T${t}` : ""));
+      L.appendChild(item);
+    });
+  }
+
+  // ---------------------------------------------------------------- sliders
+  const layerZ = (l) => (META.layers_z && META.layers_z[l] != null ? META.layers_z[l] : Z[layerLast[l]] / 1000);
+  ui.layerMin.max = ui.layerMax.max = String(layerCount - 1);
+  ui.layerMin.value = "0"; ui.layerMax.value = String(layerCount - 1);
+
+  let visibleLast = N - 1;
+  function updateMoveSlider(keepEnd) {
+    const top = +ui.layerMax.value;
+    const first = layerFirst[top], last = layerLast[top];
+    const atEnd = keepEnd || +ui.move.value >= +ui.move.max;
+    ui.move.min = String(first); ui.move.max = String(last);
+    if (atEnd || +ui.move.value < first || +ui.move.value > last) ui.move.value = String(last);
+  }
+  function onLayers(which) {
+    let lo = +ui.layerMin.value, hi = +ui.layerMax.value;
+    if (lo > hi) { if (which === "min") { hi = lo; ui.layerMax.value = String(hi); } else { lo = hi; ui.layerMin.value = String(lo); } }
+    const span = Math.max(layerCount - 1, 1);
+    ui.layerFill.style.left = (lo / span) * 100 + "%";
+    ui.layerFill.style.width = ((hi - lo) / span) * 100 + "%";
+    ui.layerVal.textContent = lo === hi ? `${hi + 1} · ${layerZ(hi).toFixed(2)} mm` : `${lo + 1}–${hi + 1} · ${layerZ(hi).toFixed(2)} mm`;
+    updateMoveSlider(true);
+    onMove();
+  }
+  function onMove() {
+    visibleLast = +ui.move.value;
+    const top = +ui.layerMax.value;
+    const first = layerFirst[top];
+    ui.moveVal.textContent = `${visibleLast - first + 1} / ${layerLast[top] - first + 1}`;
+    const i = visibleLast;
+    const typeName = TYPE[i] === T_EXTRUDE ? (META.roles[ROLE[i]] || {}).name : TYPE[i] === T_TRAVEL ? "Travel" : TYPE[i] === T_WIPE ? "Wipe" : "Other";
+    const parts = [
+      `<b>${typeName}</b>`,
+      `X ${(X[i] / 1000).toFixed(2)}  Y ${(Y[i] / 1000).toFixed(2)}  Z ${(Z[i] / 1000).toFixed(2)}`,
+      `${(col.feedrate[i] / 10).toFixed(0)} mm/s`,
+    ];
+    if (TYPE[i] === T_EXTRUDE) parts.push(`width ${(col.width[i] / 1000).toFixed(2)}`, `height ${(col.height[i] / 1000).toFixed(2)}`);
+    parts.push(`fan ${col.fan[i]}%`, `${col.temperature[i]} °C`, `line ${col.line[i] + 1}`, `at ${fmtTime(startTime[i])}`);
+    ui.moveInfo.innerHTML = parts.join(" · ");
+    gl.bindBuffer(gl.ARRAY_BUFFER, marker.buf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, new Float32Array([X[i] / 1000, Y[i] / 1000, Z[i] / 1000]));
+    requestRender();
+  }
+  ui.layerMin.addEventListener("input", () => onLayers("min"));
+  ui.layerMax.addEventListener("input", () => onLayers("max"));
+  ui.move.addEventListener("input", onMove);
+  ui.mode.addEventListener("change", recolor);
+  for (const c of [ui.showTravel, ui.showWipe, ui.showBed, ui.showMarker]) c.addEventListener("change", requestRender);
+
+  window.addEventListener("keydown", (ev) => {
+    if (ev.target instanceof HTMLSelectElement) return;
+    const step = (input, d) => { input.value = String(Math.min(Math.max(+input.value + d, +input.min), +input.max)); };
+    const big = ev.shiftKey ? 10 : 1;
+    if (ev.key === "ArrowUp") { step(ui.layerMax, big); onLayers("max"); }
+    else if (ev.key === "ArrowDown") { step(ui.layerMax, -big); onLayers("max"); }
+    else if (ev.key === "ArrowRight") { step(ui.move, big); onMove(); }
+    else if (ev.key === "ArrowLeft") { step(ui.move, -big); onMove(); }
+    else return;
+    ev.preventDefault();
+  });
+
+  // ---------------------------------------------------------------- camera
+  const center = [(bbMin[0] + bbMax[0]) / 2, (bbMin[1] + bbMax[1]) / 2, (bbMin[2] + bbMax[2]) / 2];
+  const radius = Math.max(Math.hypot(bbMax[0] - bbMin[0], bbMax[1] - bbMin[1], bbMax[2] - bbMin[2]) / 2, 5);
+  // Distance that fits the print's bounding sphere, also in a narrow (portrait) window.
+  const fitDist = () => {
+    const aspect = canvas.clientWidth / Math.max(canvas.clientHeight, 1);
+    return (radius * 1.25) / Math.tan((35 * Math.PI) / 360) / Math.min(1, aspect);
+  };
+  const cam = { target: center.slice(), yaw: -Math.PI / 2 - 0.6, pitch: 0.55, dist: fitDist() };
+  const VIEWS = {
+    iso: [-Math.PI / 2 - 0.6, 0.55], top: [-Math.PI / 2, Math.PI / 2 - 0.001], front: [-Math.PI / 2, 0.0], left: [Math.PI, 0.0],
+  };
+  function setView(name) {
+    if (name !== "fit" && VIEWS[name]) { cam.yaw = VIEWS[name][0]; cam.pitch = VIEWS[name][1]; }
+    cam.target = center.slice(); cam.dist = fitDist();
+    requestRender();
+  }
+  document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  function eyePos() {
+    const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+    return [cam.target[0] + cam.dist * cp * Math.cos(cam.yaw), cam.target[1] + cam.dist * cp * Math.sin(cam.yaw), cam.target[2] + cam.dist * sp];
+  }
+  function basis() {
+    const eye = eyePos();
+    const f = norm(sub(cam.target, eye));
+    const r = norm(cross(f, [0, 0, 1]));
+    const u = cross(r, f);
+    return { eye, f, r, u };
+  }
+  function viewProj(aspect) {
+    const { eye, f, r, u } = basis();
+    const view = [r[0], u[0], -f[0], 0, r[1], u[1], -f[1], 0, r[2], u[2], -f[2], 0, -dot(r, eye), -dot(u, eye), dot(f, eye), 1];
+    const near = Math.max(cam.dist / 200, 0.05), far = cam.dist + radius * 20 + 1000;
+    const t = 1 / Math.tan((35 * Math.PI) / 360);
+    const proj = [t / aspect, 0, 0, 0, 0, t, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, (2 * far * near) / (near - far), 0];
+    const m = new Float32Array(16);
+    for (let c = 0; c < 4; ++c) for (let rr = 0; rr < 4; ++rr) {
+      let s = 0; for (let k = 0; k < 4; ++k) s += proj[k * 4 + rr] * view[c * 4 + k]; m[c * 4 + rr] = s;
+    }
+    return { m, eye };
+  }
+
+  const pointers = new Map();
+  let lastPinch = null;
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("pointerdown", (e) => { canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, button: e.button, shift: e.shiftKey }); lastPinch = null; });
+  canvas.addEventListener("pointerup", (e) => { pointers.delete(e.pointerId); lastPinch = null; });
+  canvas.addEventListener("pointercancel", (e) => { pointers.delete(e.pointerId); lastPinch = null; });
+  const pan = (dx, dy) => {
+    const { r, u } = basis();
+    const s = (cam.dist * 2 * Math.tan((35 * Math.PI) / 360)) / canvas.clientHeight;
+    for (let k = 0; k < 3; ++k) cam.target[k] += (-dx * r[k] + dy * u[k]) * s;
+  };
+  canvas.addEventListener("pointermove", (e) => {
+    const p = pointers.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y), mid = [(a.x + b.x) / 2, (a.y + b.y) / 2];
+      if (lastPinch) { cam.dist *= lastPinch.d / Math.max(d, 1); pan(mid[0] - lastPinch.mid[0], mid[1] - lastPinch.mid[1]); }
+      lastPinch = { d, mid };
+    } else if (p.button === 2 || p.button === 1 || p.shift || e.shiftKey) {
+      pan(dx, dy);
+    } else {
+      cam.yaw -= dx * 0.008;
+      cam.pitch = Math.min(Math.max(cam.pitch + dy * 0.008, -Math.PI / 2 + 0.001), Math.PI / 2 - 0.001);
+    }
+    requestRender();
+  });
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const k = Math.exp(Math.sign(e.deltaY) * Math.min(Math.abs(e.deltaY), 200) * 0.0015);
+    cam.dist = Math.min(Math.max(cam.dist * k, 1), radius * 50 + 2000);
+    requestRender();
+  }, { passive: false });
+
+  // ---------------------------------------------------------------- render
+  let pending = false;
+  function requestRender() { if (!pending) { pending = true; requestAnimationFrame(render); } }
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  }
+  window.addEventListener("resize", requestRender);
+  const cssColor = (name) => {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const m = /^#([0-9a-f]{6})$/i.exec(v);
+    if (!m) return [0.12, 0.12, 0.13];
+    const n = parseInt(m[1], 16);
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+  };
+
+  function drawLines(set, mode, first, count, color, vp, size) {
+    gl.useProgram(lineProg.p);
+    gl.uniformMatrix4fv(lineProg.u.u_vp, false, vp);
+    gl.uniform4fv(lineProg.u.u_color, color);
+    gl.uniform1f(lineProg.u.u_size, size || 1);
+    gl.uniform1i(lineProg.u.u_round, mode === gl.POINTS ? 1 : 0);
+    gl.bindVertexArray(set.vao);
+    gl.drawArrays(mode, first, count);
+  }
+  const rgba = (hex, a) => { const c = hexToRgb(hex); return [c[0] / 255, c[1] / 255, c[2] / 255, a]; };
+
+  function render() {
+    pending = false;
+    resize();
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    const bg = cssColor("--bg");
+    const light = (bg[0] + bg[1] + bg[2]) / 3 > 0.5;
+    gl.clearColor(bg[0], bg[1], bg[2], 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    const { m: vp, eye } = viewProj(canvas.width / Math.max(canvas.height, 1));
+
+    const firstVertex = layerFirst[+ui.layerMin.value];
+    const lastVertex = visibleLast;
+
+    if (ui.showBed.checked) {
+      gl.depthMask(false);
+      drawLines(bedFillTris, gl.TRIANGLE_FAN, 0, bedFillTris.count, light ? [0.85, 0.86, 0.88, 1] : [0.16, 0.17, 0.19, 1], vp);
+      drawLines(bedGridLines, gl.LINES, 0, bedGridLines.count, light ? [0.74, 0.75, 0.78, 1] : [0.24, 0.25, 0.28, 1], vp);
+      drawLines(bedOutlineLines, gl.LINES, 0, bedOutlineLines.count, light ? [0.5, 0.52, 0.55, 1] : [0.45, 0.47, 0.5, 1], vp);
+      gl.depthMask(true);
+    }
+
+    const e0 = lowerBound(extVertex, firstVertex), e1 = upperBound(extVertex, lastVertex);
+    if (e1 > e0) {
+      gl.useProgram(extProg.p);
+      gl.uniformMatrix4fv(extProg.u.u_vp, false, vp);
+      gl.uniform3fv(extProg.u.u_eye, eye);
+      gl.uniform1ui(extProg.u.u_mask, roleMask);
+      gl.bindVertexArray(extVao);
+      // Chunked so very large prints stay under driver limits for one draw.
+      const CHUNK = 4000000;
+      for (let s = e0; s < e1; s += CHUNK) {
+        bindInstances(s);
+        gl.drawArraysInstanced(gl.TRIANGLES, 0, PRISM_VERTS, Math.min(CHUNK, e1 - s));
+      }
+    }
+    if (ui.showTravel.checked && travelVertex.length) {
+      const t0 = lowerBound(travelVertex, firstVertex), t1 = upperBound(travelVertex, lastVertex);
+      if (t1 > t0) drawLines(travelLines, gl.LINES, t0 * 2, (t1 - t0) * 2, rgba(META.travel_color, 1), vp);
+    }
+    if (ui.showWipe.checked && wipeVertex.length) {
+      const w0 = lowerBound(wipeVertex, firstVertex), w1 = upperBound(wipeVertex, lastVertex);
+      if (w1 > w0) drawLines(wipeLines, gl.LINES, w0 * 2, (w1 - w0) * 2, rgba(META.wipe_color, 1), vp);
+    }
+    if (ui.showMarker.checked) {
+      gl.disable(gl.DEPTH_TEST);
+      drawLines(marker, gl.POINTS, 0, 1, [1, 1, 1, 1], vp, 11);
+      drawLines(marker, gl.POINTS, 0, 1, [1, 0.55, 0.1, 1], vp, 8);
+    }
+    gl.bindVertexArray(null);
+  }
+
+  // ---------------------------------------------------------------- header + start
+  document.title = (META.title ? META.title + " · " : "") + "G-code preview";
+  document.getElementById("title").textContent = META.title || "G-code preview";
+  document.getElementById("subtitle").textContent = [META.printer, META.generator].filter(Boolean).join(" · ");
+  const total = META.estimated_time || startTime[N - 1] || 0;
+  document.getElementById("stats").textContent = `${fmtTime(total)} · ${layerCount} layers · ${(bbMax[2]).toFixed(2)} mm tall`;
+
+  const side = document.getElementById("side");
+  document.getElementById("toggle-side").addEventListener("click", (e) => {
+    side.classList.toggle("collapsed");
+    e.target.textContent = side.classList.contains("collapsed") ? "Show" : "Hide";
+  });
+  if (window.matchMedia("(max-width: 760px)").matches) { side.classList.add("collapsed"); document.getElementById("toggle-side").textContent = "Show"; }
+
+  for (const id of ["info", "side", "bottom"]) document.getElementById(id).hidden = false;
+  statusEl.remove();
+  recolor();
+  onLayers("max");
+  window.__preview = { N, nExt, layerCount }; // for tests
+})().catch((e) => {
+  const s = document.getElementById("status");
+  if (s) s.textContent = "Could not show the preview: " + e.message;
+  console.error(e);
+});
+</script>
+</body>
+</html>
