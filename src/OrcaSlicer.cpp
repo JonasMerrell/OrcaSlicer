@@ -138,6 +138,7 @@
 #include "slic3r/GUI/GLCanvas3D.hpp"
 #include "slic3r/GUI/Camera.hpp"
 #include "slic3r/GUI/Plater.hpp"
+#include "slic3r/GUI/GCodeHtmlExport.hpp"
 #include "slic3r/GUI/GuiColor.hpp"
 #include <GLFW/glfw3.h>
 #include "libslic3r/AppConfig.hpp"
@@ -1651,6 +1652,8 @@ int CLI::run(int argc, char **argv)
 
     const ConfigOptionBool* export_statistics_option = m_config.option<ConfigOptionBool>("export_statistics");
     const bool              export_statistics        = export_statistics_option != nullptr && export_statistics_option->value;
+    const ConfigOptionBool* export_html_option = m_config.option<ConfigOptionBool>("export_gcode_html");
+    const bool              export_gcode_html  = export_html_option != nullptr && export_html_option->value;
 
     ConfigOptionBool* avoid_extrusion_cali_region_option = m_config.option<ConfigOptionBool>("avoid_extrusion_cali_region");
     if (avoid_extrusion_cali_region_option)
@@ -7261,6 +7264,39 @@ int CLI::run(int argc, char **argv)
                                             BOOST_LOG_TRIVIAL(error) << "plate " << index + 1 << ": " << ex.what();
                                             record_exit_reson(outfile_dir, CLI_EXPORT_STATISTICS_ERROR, index + 1, cli_errors[CLI_EXPORT_STATISTICS_ERROR], sliced_info);
                                             flush_and_exit(CLI_EXPORT_STATISTICS_ERROR);
+                                        }
+                                    }
+                                    // Fork: the preview as an HTML page next to the G-code. A failure is logged and
+                                    // printed but does not fail the slice, since the G-code is already written.
+                                    if (export_gcode_html && !outfile_dir.empty() && gcode_result) {
+                                        const DynamicPrintConfig& full = print_fff->full_print_config();
+                                        GUI::GCodeHtmlInfo html_info;
+                                        html_info.title     = boost::filesystem::path(outfile).stem().string();
+                                        html_info.generator = std::string(SLIC3R_APP_NAME) + " " + SoftFever_VERSION;
+                                        if (const auto* opt = full.option<ConfigOptionString>("printer_settings_id"))
+                                            html_info.printer = opt->value;
+                                        const Vec3d origin = part_plate->get_origin();
+                                        html_info.origin_x = origin.x();
+                                        html_info.origin_y = origin.y();
+                                        if (const auto* area = full.option<ConfigOptionPoints>("printable_area"))
+                                            for (const Vec2d& pt : area->values)
+                                                html_info.bed.push_back({pt.x(), pt.y()});
+                                        if (const auto* h = full.option<ConfigOptionFloat>("printable_height"))
+                                            html_info.bed_height = h->value;
+                                        if (const auto* names = full.option<ConfigOptionStrings>("filament_settings_id"))
+                                            html_info.filaments = names->values;
+                                        std::vector<std::string> tool_colors;
+                                        if (const auto* colors = full.option<ConfigOptionStrings>("filament_colour"))
+                                            tool_colors = colors->values;
+                                        boost::filesystem::path html_path(outfile);
+                                        html_path.replace_extension(".html");
+                                        std::string html_error;
+                                        if (GUI::export_gcode_html(*gcode_result, tool_colors, html_info, resources_dir() + "/web/gcode_html/viewer.html",
+                                                                   html_path.string(), html_error))
+                                            BOOST_LOG_TRIVIAL(info) << "plate " << index + 1 << ": wrote " << html_path.string();
+                                        else {
+                                            BOOST_LOG_TRIVIAL(error) << "plate " << index + 1 << ": HTML export failed: " << html_error;
+                                            std::cerr << "HTML export failed: " << html_error << std::endl;
                                         }
                                     }
 

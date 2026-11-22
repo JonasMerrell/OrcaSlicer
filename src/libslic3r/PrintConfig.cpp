@@ -13170,6 +13170,13 @@ CLIMiscConfigDef::CLIMiscConfigDef()
                      "and per object.");
     def->set_default_value(new ConfigOptionBool(false));
 
+    // Fork: the G-code preview as a self-contained HTML page, without starting the GUI.
+    def = this->add("export_gcode_html", coBool);
+    def->label = L("Export G-code preview as HTML");
+    def->tooltip = L("Write the toolpaths of each sliced plate as a self-contained HTML page (plate_N.html next to its G-code in the "
+                     "output directory) that shows the G-code preview in any browser.");
+    def->set_default_value(new ConfigOptionBool(false));
+
     def = this->add("debug", coInt);
     def->label = L("Debug level");
     def->tooltip = L("Sets debug logging level. 0:fatal, 1:error, 2:warning, 3:info, 4:debug, 5:trace\n");

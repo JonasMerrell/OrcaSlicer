@@ -16,6 +16,7 @@ class Viewer;
 }
 
 namespace Slic3r {
+struct GCodeProcessorResult;
 namespace GUI {
 
 struct GCodeHtmlInfo
@@ -37,6 +38,15 @@ bool export_gcode_html(const libvgcode::Viewer& viewer,
                        const std::string&       template_path,
                        const std::string&       filename,
                        std::string&             error);
+
+// Same file straight from a G-code processor result, without the GUI or an OpenGL context
+// (used by the command line's --export-gcode-html). tool_colors are "#rrggbb" per extruder.
+bool export_gcode_html(const GCodeProcessorResult&     result,
+                       const std::vector<std::string>& tool_colors,
+                       const GCodeHtmlInfo&            info,
+                       const std::string&              template_path,
+                       const std::string&              filename,
+                       std::string&                    error);
 
 } // namespace GUI
 } // namespace Slic3r
