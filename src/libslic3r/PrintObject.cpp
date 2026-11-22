@@ -2487,7 +2487,25 @@ void PrintObject::detect_surfaces_type()
         // ==============================================================================================================
     }
 
-    // =======================================================================================================        BOOST_LOG_TRIVIAL(debug) << "Detecting solid surfaces for region " << region_id << " - clipping in parallel - start";
+    // ==============================================================================================================
+    // === ORCA: Interim workaround - for now the new stInternalAfterExternalBridge surfaace is re-classified  ==============
+    // === back to a bottom bridge. As a starting point, this improves bridging reliability as it extrudes ==========
+    // === two external bridge layers. However, TODO: Implement a new surface type throughout the codebase ==========
+    // ==============================================================================================================
+    // Once all the regions have their second bridge layer, and before their slices are trimmed into fill surfaces below.
+    if ((this->config().enable_extra_bridge_layer.value == eblApplyToAll) || (this->config().enable_extra_bridge_layer.value == eblExternalBridgeOnly)) {
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, m_layers.size()), [this](const tbb::blocked_range<size_t> &range) {
+            for (size_t idx_layer = range.begin(); idx_layer < range.end(); ++idx_layer)
+                for (LayerRegion *layerm : m_layers[idx_layer]->regions())
+                    for (Surface &s : layerm->slices.surfaces)
+                        if (s.surface_type == stInternalAfterExternalBridge)
+                            s.surface_type = stBottomBridge;
+        });
+        m_print->throw_if_canceled();
+    }
+
+    tbb::parallel_for(size_t(0), this->num_printing_regions(), [&](size_t region_id) {
+        BOOST_LOG_TRIVIAL(debug) << "Detecting solid surfaces for region " << region_id << " - clipping in parallel - start";
         // Fill in layerm->fill_surfaces by trimming the layerm->slices by the cummulative layerm->fill_surfaces.
         tbb::parallel_for(
             tbb::blocked_range<size_t>(0, m_layers.size()),

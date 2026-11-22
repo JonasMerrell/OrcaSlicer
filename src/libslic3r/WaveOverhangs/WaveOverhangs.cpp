@@ -585,7 +585,7 @@ void append_zig_zag_front_levels(ExtrusionPaths               &overhang_region,
         // ExtrusionPath polylines are 3D here; wave lines are planar (z = 0).
         const Polyline3 front3(front);
         if (current.last_point() == front.first_point())
-            current.polyline.append(front3.points.begin() + 1, front3.points.end());
+            current.polyline.points.insert(current.polyline.points.end(), front3.points.begin() + 1, front3.points.end());
         else
             current.polyline.append(front3);
     };
