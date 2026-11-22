@@ -11,6 +11,7 @@
 #include <boost/optional/optional.hpp>
 #include <cmath>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <cassert>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/classification.hpp>
@@ -214,6 +215,7 @@
 #include "format.hpp"
 #include "3DScene.hpp"
 #include "GLCanvas3D.hpp"
+#include "GCodeHtmlExport.hpp"
 #include "Selection.hpp"
 #include "GLToolbar.hpp"
 #include "GUI_Preview.hpp"
@@ -21225,6 +21227,54 @@ void Plater::export_toolpaths_to_obj() const
 
     wxBusyCursor wait;
     p->preview->get_canvas3d()->export_toolpaths_to_obj(into_u8(path).c_str());
+}
+
+// Fork: the G-code preview as one self-contained HTML file that opens in any browser.
+void Plater::export_toolpaths_to_html() const
+{
+    if ((printer_technology() != ptFFF) || !is_preview_loaded())
+        return;
+
+    fs::path output_file = p->get_export_file_path(FT_GCODE);
+    output_file.replace_extension("html");
+    const std::string out_dir = output_file.parent_path().string();
+
+    wxFileDialog dlg(p->q, _L("Export toolpaths as HTML:"),
+        out_dir.empty() ? from_u8(wxGetApp().app_config->get_last_dir()) : from_path(output_file.parent_path()),
+        from_path(output_file.filename()), "HTML (*.html;*.htm)|*.html;*.htm", wxFD_SAVE | wxFD_OVERWRITE_PROMPT);
+    if (dlg.ShowModal() != wxID_OK)
+        return;
+    std::string path = into_u8(dlg.GetPath());
+    if (!boost::iends_with(path, ".html") && !boost::iends_with(path, ".htm"))
+        path += ".html";
+
+    GCodeHtmlInfo info;
+    info.title     = into_u8(const_cast<Plater*>(this)->get_project_name());
+    info.generator = std::string(SLIC3R_APP_NAME) + " " + SoftFever_VERSION;
+    if (PartPlate* plate = p->partplate_list.get_curr_plate()) {
+        const Vec3d origin = plate->get_origin();
+        info.origin_x      = origin.x();
+        info.origin_y      = origin.y();
+    }
+    if (PresetBundle* bundle = wxGetApp().preset_bundle) {
+        const Preset& printer = bundle->printers.get_edited_preset();
+        info.printer          = printer.name;
+        if (const auto* area = printer.config.option<ConfigOptionPoints>("printable_area"))
+            for (const Vec2d& pt : area->values)
+                info.bed.push_back({pt.x(), pt.y()});
+        if (const auto* h = printer.config.option<ConfigOptionFloat>("printable_height"))
+            info.bed_height = h->value;
+        info.filaments = bundle->filament_presets;
+    }
+
+    std::string error;
+    wxBusyCursor wait;
+    if (!p->preview->get_canvas3d()->export_toolpaths_to_html(path.c_str(), info, error)) {
+        show_error(p->q, from_u8(error));
+        return;
+    }
+    wxGetApp().app_config->update_last_output_dir(fs::path(path).parent_path().string());
+    p->notification_manager->push_exporting_finished_notification(path, fs::path(path).parent_path().string(), false);
 }
 
 bool Plater::is_empty_project() {

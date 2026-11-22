@@ -39,6 +39,7 @@
 #include <vector>
 
 namespace Slic3r {
+namespace GUI { struct GCodeHtmlInfo; }
 
 class Print;
 class TriangleMesh;
@@ -580,6 +581,8 @@ public:
     float get_legend_height() { return m_legend_height; }
 
     void export_toolpaths_to_obj(const char* filename) const;
+    // Fork: the whole preview as one self-contained HTML file.
+    bool export_toolpaths_to_html(const char* filename, const GCodeHtmlInfo& info, std::string& error) const;
 
     void set_belt_printer(bool enabled, float angle_deg) { m_belt_view_enabled = enabled; m_belt_angle_deg = angle_deg; }
     bool is_belt_view() const { return m_belt_view_enabled && m_belt_angle_deg > 0.f; }

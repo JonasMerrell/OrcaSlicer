@@ -1,4 +1,5 @@
 #include "Preferences.hpp"
+#include "FilamentHub.hpp"
 #include "slic3r/plugin/host/PluginPages.hpp"
 #include "CloudProvider.hpp"
 #include "ColorPickerDialog.hpp"
@@ -758,6 +759,31 @@ wxBoxSizer *PreferencesDialog::create_item_loglevel_combobox(wxString title, wxS
         app_config->set("log_severity_level",level);
         e.Skip();
      });
+    return m_sizer;
+}
+
+wxBoxSizer *PreferencesDialog::create_item_text_input(wxString title, wxString tooltip, std::string param, bool password)
+{
+    wxBoxSizer *m_sizer = create_item_label(title, tooltip.IsEmpty() ? title : tooltip);
+
+    auto input = new ::TextInput(m_parent, wxEmptyString, wxEmptyString, wxEmptyString, wxDefaultPosition,
+                                 wxSize(FromDIP(260), -1), wxTE_PROCESS_ENTER | (password ? wxTE_PASSWORD : 0));
+    StateColor input_bg(std::pair<wxColour, int>(wxColour("#F0F0F1"), StateColor::Disabled), std::pair<wxColour, int>(*wxWHITE, StateColor::Enabled));
+    input->SetBackgroundColor(input_bg);
+    input->GetTextCtrl()->SetValue(from_u8(app_config->get(param)));
+    input->SetToolTip(tooltip);
+    m_sizer->Add(input, 0, wxALIGN_CENTER_VERTICAL);
+
+    auto save = [this, param, input]() {
+        const std::string value = into_u8(input->GetTextCtrl()->GetValue().Strip(wxString::both));
+        if (value == app_config->get(param))
+            return;
+        app_config->set(param, value);
+        app_config->save();
+        FilamentHubInventory::instance().refresh_async();
+    };
+    input->GetTextCtrl()->Bind(wxEVT_TEXT_ENTER, [save](wxCommandEvent &e) { save(); e.Skip(); });
+    input->GetTextCtrl()->Bind(wxEVT_KILL_FOCUS, [save](wxFocusEvent &e) { save(); e.Skip(); });
     return m_sizer;
 }
 
@@ -2467,6 +2493,19 @@ void PreferencesDialog::create_items()
 
     auto item_bambu_cloud     = create_item_bambu_cloud(_L("Enable Bambu Cloud"), _L("Allow logging into Bambu Cloud alongside Orca Cloud. When enabled, a Bambu login section appears on the homepage."));
     g_sizer->Add(item_bambu_cloud);
+
+    //// ONLINE > Filament hub (fork)
+    g_sizer->Add(create_item_title(_L("Filament hub")), 1, wxEXPAND);
+    g_sizer->Add(create_item_text_input(_L("Hub URL"),
+        _L("Address of your self-hosted filament hub, e.g. http://192.168.0.157:7913. With a URL and token set, "
+           "user presets sync with the hub instead of Orca Cloud. (Requires restart)"),
+        FILAMENT_HUB_URL_KEY));
+    g_sizer->Add(create_item_text_input(_L("Hub token"),
+        _L("Token created on the hub with: filament-hub token create <name>. (Requires restart)"),
+        FILAMENT_HUB_TOKEN_KEY, /*password=*/true));
+    g_sizer->Add(create_item_checkbox(_L("Only show filaments I have"),
+        _L("Filament lists show only presets linked to filaments in your inventory, plus the selected one."),
+        FILAMENT_HUB_OWNED_ONLY_KEY));
 
     //// ONLINE > Update & sync
     g_sizer->Add(create_item_title(_L("Update & sync")), 1, wxEXPAND);

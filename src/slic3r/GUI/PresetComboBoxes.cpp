@@ -57,6 +57,7 @@
 #include "libslic3r/Color.hpp"
 
 #include "GUI.hpp"
+#include "FilamentHub.hpp"
 #include "GUI_App.hpp"
 #include "Plater.hpp"
 #include "MainFrame.hpp"
@@ -883,6 +884,12 @@ PlaterPresetComboBox::PlaterPresetComboBox(wxWindow *parent, Preset::Type preset
 
     if (m_type == Preset::TYPE_FILAMENT)
     {
+        // Fork: keep the filament hub inventory fresh; the list updates once the request returns.
+        Bind(wxEVT_COMBOBOX_DROPDOWN, [](wxCommandEvent& e) {
+            FilamentHubInventory::instance().refresh_if_stale(std::chrono::seconds(60));
+            e.Skip();
+        });
+
         // BBS: not show color picker
 #if 0
         Bind(wxEVT_LEFT_DOWN, [this](wxMouseEvent &event) {
@@ -1482,6 +1489,51 @@ void PlaterPresetComboBox::update()
             }
         }
     };
+
+    // Fork: "My filaments" from the self-hosted filament hub (Spoolman inventory linked to presets).
+    if (m_type == Preset::TYPE_FILAMENT && FilamentHubInventory::configured(wxGetApp().app_config) &&
+        FilamentHubInventory::instance().has_data()) {
+        std::map<wxString, std::pair<wxBitmap*, std::string>> owned_presets;
+        auto collect = [&](const std::map<wxString, wxBitmap*>& src) {
+            for (const auto& [name, bmp] : src) {
+                auto        alias_it = preset_aliases.find(name);
+                std::string alias    = alias_it != preset_aliases.end() ? alias_it->second : std::string();
+                if (auto owned = FilamentHubInventory::instance().find(into_u8(name), alias))
+                    owned_presets.emplace(name, std::make_pair(bmp, owned_filament_suffix(*owned)));
+            }
+        };
+        collect(nonsys_presets);
+        collect(bundle_presets);
+        collect(system_presets);
+
+        if (!owned_presets.empty()) {
+            const wxString selected_name = !selected_user_preset.empty()   ? selected_user_preset :
+                                           !selected_bundle_preset.empty() ? selected_bundle_preset :
+                                                                             selected_system_preset;
+            set_label_marker(Append(_L("My filaments"), wxNullBitmap, DD_ITEM_STYLE_SPLIT_ITEM));
+            for (const auto& [name, entry] : owned_presets) {
+                int index = Append(from_u8(preset_aliases[name] + entry.second), *entry.first);
+                SetItemAlias(index, name);
+                SetItemTooltip(index, preset_descriptions[name]);
+                validate_selection(name == selected_name);
+            }
+
+            // "Only filaments I have": drop everything else, except the selected preset so it stays visible.
+            if (wxGetApp().app_config->get_bool(FILAMENT_HUB_OWNED_ONLY_KEY)) {
+                auto keep_only_selected = [&owned_presets](std::map<wxString, wxBitmap*>& presets_map, const wxString& selected) {
+                    for (auto it = presets_map.begin(); it != presets_map.end();) {
+                        if (it->first != selected || owned_presets.count(it->first) > 0)
+                            it = presets_map.erase(it);
+                        else
+                            ++it;
+                    }
+                };
+                keep_only_selected(nonsys_presets, selected_user_preset);
+                keep_only_selected(bundle_presets, selected_bundle_preset);
+                keep_only_selected(system_presets, selected_system_preset);
+            }
+        }
+    }
 
     //BBS: add project embedded preset logic
     add_presets(project_embedded_presets, selected_user_preset, L("Project-inside presets"), _L("Project") + " ");
