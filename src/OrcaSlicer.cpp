@@ -7273,9 +7273,9 @@ int CLI::run(int argc, char **argv)
                                         GUI::GCodeHtmlInfo html_info;
                                         // Name the page after the model rather than plate_N.
                                         html_info.title = boost::filesystem::path(outfile).stem().string();
-                                        if (!print_fff->objects().empty() && print_fff->objects().front()->model_object() != nullptr &&
-                                            !print_fff->objects().front()->model_object()->name.empty()) {
-                                            html_info.title = boost::filesystem::path(print_fff->objects().front()->model_object()->name).stem().string();
+                                        if (print_fff->objects().size() > 0 && print_fff->objects()[0]->model_object() != nullptr &&
+                                            !print_fff->objects()[0]->model_object()->name.empty()) {
+                                            html_info.title = boost::filesystem::path(print_fff->objects()[0]->model_object()->name).stem().string();
                                             if (print_fff->objects().size() > 1)
                                                 html_info.title += " + " + std::to_string(print_fff->objects().size() - 1) + " more";
                                         }
