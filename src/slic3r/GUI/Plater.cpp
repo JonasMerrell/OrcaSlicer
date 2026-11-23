@@ -216,6 +216,7 @@
 #include "3DScene.hpp"
 #include "GLCanvas3D.hpp"
 #include "GCodeHtmlExport.hpp"
+#include "RcadLink.hpp"
 #include "Selection.hpp"
 #include "GLToolbar.hpp"
 #include "GUI_Preview.hpp"
@@ -7644,7 +7645,10 @@ struct Plater::priv
     void export_gcode(fs::path output_path, bool output_path_on_removable_media);
     void export_gcode(fs::path output_path, bool output_path_on_removable_media, PrintHostJob upload_job);
 
-    void reload_from_disk();
+    // Reloads the given (object, volume) pairs, or the selected volumes when none are given.
+    void reload_from_disk(std::vector<std::pair<int, int>> volumes = {});
+    // Reloads the volumes whose source is one of `paths` in place, and returns the paths no volume came from.
+    std::vector<fs::path> reload_loaded_sources(const std::vector<fs::path> &paths);
     bool replace_volume_with_stl(int object_idx, int volume_idx, const fs::path& new_path, const std::string& snapshot = "");
     void replace_with_stl();
     void replace_all_with_stl();
@@ -8409,7 +8413,13 @@ Plater::priv::priv(Plater *q, MainFrame *main_frame)
         }
         wxGetApp().mainframe->Show();
         wxGetApp().mainframe->Raise();
-        this->q->load_files(input_files);
+        // A file sent again (rCAD resends a part it changed) reloads the objects made from it in
+        // place, keeping where they sit and their settings; only files new to the plate are added.
+        input_files.clear();
+        for (const fs::path &path : this->reload_loaded_sources(evt.data))
+            input_files.push_back(from_u8(path.string()));
+        if (!input_files.empty())
+            this->q->load_files(input_files);
     });
     
     this->q->Bind(EVT_START_DOWNLOAD_OTHER_INSTANCE, [](StartDownloadOtherInstanceEvent& evt) {
@@ -10059,8 +10069,9 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                                 }
                             }
                         },
-                        [&is_user_cancel, &linear, &angle, &split_compound](Slic3r::Step& file, double& linear_value, double& angle_value, bool& is_split)-> int {
-                            if (wxGetApp().app_config->get_bool("enable_step_mesh_setting")) {
+                        [&is_user_cancel, &linear, &angle, &split_compound, from_rcad = rcad_source(path.string()).has_value()](Slic3r::Step& file, double& linear_value, double& angle_value, bool& is_split)-> int {
+                            // rCAD sends each part on its own and again on every change: no mesh dialog for those
+                            if (wxGetApp().app_config->get_bool("enable_step_mesh_setting") && !from_rcad) {
                                 StepMeshDialog mesh_dlg(nullptr, file, linear, angle);
                                 if (mesh_dlg.ShowModal() == wxID_OK) {
                                     linear_value = mesh_dlg.get_linear_deflection();
@@ -12409,11 +12420,11 @@ static std::vector<std::pair<int, int>> reloadable_volumes(const Model &model, c
 }
 #endif // ENABLE_RELOAD_FROM_DISK_REWORK
 
-void Plater::priv::reload_from_disk()
+void Plater::priv::reload_from_disk(std::vector<std::pair<int, int>> volumes)
 {
 #if ENABLE_RELOAD_FROM_DISK_REWORK
     // collect selected reloadable ModelVolumes
-    std::vector<std::pair<int, int>> selected_volumes = reloadable_volumes(model, get_selection());
+    std::vector<std::pair<int, int>> selected_volumes = volumes.empty() ? reloadable_volumes(model, get_selection()) : std::move(volumes);
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " entry, and reloadable volumes number is: " << selected_volumes.size();
     // nothing to reload, return
     if (selected_volumes.empty())
@@ -12873,6 +12884,42 @@ void Plater::priv::reload_all_from_disk()
     for (unsigned int idx : curr_idxs) {
         selection.add(idx, false);
     }
+}
+
+static bool is_model_file(const fs::path &path)
+{
+    const std::string ext = boost::algorithm::to_lower_copy(path.extension().string());
+    return ext == ".step" || ext == ".stp" || ext == ".stl" || ext == ".obj" || ext == ".amf" || ext == ".oltp";
+}
+
+std::vector<fs::path> Plater::priv::reload_loaded_sources(const std::vector<fs::path> &paths)
+{
+    auto same_file = [](const fs::path &a, const fs::path &b) {
+        boost::system::error_code ec;
+        return fs::exists(a, ec) && fs::exists(b, ec) && fs::equivalent(a, b, ec);
+    };
+    std::vector<fs::path>            new_paths;
+    std::vector<std::pair<int, int>> volumes;
+    for (const fs::path &path : paths) {
+        bool loaded = false;
+        if (!is_model_file(path)) {
+            new_paths.push_back(path);
+            continue;
+        }
+        for (size_t o = 0; o < model.objects.size(); ++o)
+            for (size_t v = 0; v < model.objects[o]->volumes.size(); ++v) {
+                const ModelVolume *vol = model.objects[o]->volumes[v];
+                if (!vol->source.is_from_builtin_objects && !vol->source.input_file.empty() && same_file(vol->source.input_file, path)) {
+                    volumes.emplace_back(int(o), int(v));
+                    loaded = true;
+                }
+            }
+        if (!loaded)
+            new_paths.push_back(path);
+    }
+    if (!volumes.empty())
+        reload_from_disk(std::move(volumes));
+    return new_paths;
 }
 
 //BBS: add no_slice logic

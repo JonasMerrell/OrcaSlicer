@@ -54,6 +54,7 @@
 #include "slic3r/GUI/Tab.hpp"
 #include "ParamsPanel.hpp"
 #include "MsgDialog.hpp"
+#include "RcadLink.hpp"
 #include "wx/utils.h"
 
 namespace Slic3r
@@ -1596,6 +1597,25 @@ void MenuFactory::append_menu_item_precise_seam_submenu(wxMenu* menu)
                    insert_pos);
 }
 
+void MenuFactory::append_menu_item_edit_in_rcad(wxMenu *menu, size_t pos)
+{
+    const wxString name = _L("Edit in rCAD");
+    const int      id   = menu->FindItem(name);
+    if (id != wxNOT_FOUND)
+        menu->Destroy(id);
+    // only parts rCAD sent carry the link back, so the item shows just for them
+    if (!selected_rcad_source())
+        return;
+    append_menu_item(menu, wxID_ANY, name, _L("Show this part in rCAD to change it. Send it again from rCAD to update it here."),
+        [](wxCommandEvent &) {
+            if (auto source = selected_rcad_source()) {
+                const std::string error = edit_in_rcad(*source);
+                if (!error.empty())
+                    show_error(plater(), from_u8(error));
+            }
+        }, std::string(), nullptr, []() { return true; }, m_parent, pos);
+}
+
 void MenuFactory::append_menu_item_edit_text(wxMenu *menu, size_t pos)
 {
     wxString name        = _L("Edit text");
@@ -2179,6 +2199,7 @@ wxMenu* MenuFactory::object_menu()
 
     // GEOMETRY
     append_menu_item_invalidate_cut_info(&m_object_menu, 0); // inserts itself to top of menu
+    append_menu_item_edit_in_rcad(       &m_object_menu, 0); // inserts itself to top of menu
     append_menu_item_edit_text(          &m_object_menu, 0); // inserts itself to top of menu
     append_menu_item_edit_svg(           &m_object_menu, 0); // inserts itself to top of menu
 
@@ -2204,6 +2225,7 @@ wxMenu* MenuFactory::sla_object_menu()
 wxMenu* MenuFactory::part_menu()
 {
     append_menu_items_convert_unit(m_part_transform_menu);
+    append_menu_item_edit_in_rcad(&m_part_menu, 0); // inserts itself to top of menu
 
     // stored positions not works as expected since menu has multiple dynamic sections
     append_menu_item_per_object_settings(&m_part_menu, FindPositionById(&m_part_menu, m_part_project_marker) + 1);
