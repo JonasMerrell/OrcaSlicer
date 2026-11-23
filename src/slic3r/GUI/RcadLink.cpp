@@ -38,6 +38,7 @@ std::optional<RcadSource> rcad_source(const std::string &input_file)
         s.studio   = j.value("studio", "");
         s.part     = j.value("part", "");
         s.link     = j.value("link", "");
+        s.file     = input_file;
         if (s.document.empty() && s.link.empty())
             return std::nullopt;
         return s;
@@ -67,7 +68,7 @@ static bool ask_running_rcad(const RcadSource &s)
     if (s.link.empty())
         return false;
     const std::string url = "http://" + s.link + "/edit?document=" + Http::url_encode(s.document) + "&studio=" + Http::url_encode(s.studio) +
-                            "&part=" + Http::url_encode(s.part);
+                            "&part=" + Http::url_encode(s.part) + "&file=" + Http::url_encode(s.file);
     bool shown = false;
     Http::get(url)
         .timeout_connect(2)

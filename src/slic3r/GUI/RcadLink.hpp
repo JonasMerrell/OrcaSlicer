@@ -17,6 +17,7 @@ struct RcadSource
     std::string studio;   // Part Studio name
     std::string part;     // part name
     std::string link;     // host:port of the running rCAD, may be empty
+    std::string file;     // the model file itself
 };
 
 // The rCAD source of a model file, if rCAD sent it.
