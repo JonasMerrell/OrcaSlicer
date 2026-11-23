@@ -12,6 +12,7 @@
 
 #include "GUI.hpp"
 #include "GUI_App.hpp"
+#include "3DScene.hpp"
 #include "I18N.hpp"
 #include "Plater.hpp"
 #include "Selection.hpp"
