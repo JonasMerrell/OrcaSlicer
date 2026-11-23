@@ -9183,7 +9183,9 @@ std::vector<size_t> Plater::priv::load_files(const std::vector<fs::path>& input_
                             is_user_cancel = is_user_cancel || cancel;
                         }, nullptr,
                         [&](Step& file, double& linear, double& angle, bool& split) {
-                            if (!options->chosen) {
+                            // rCAD sends each part on its own and again on every change: no mesh dialog for
+                            // those, and their defaults don't stand as the choice for other STEP files
+                            if (!options->chosen && !rcad_source(file_path.string())) {
                                 if (options->show_dialog) {
                                     StepMeshDialog mesh_dialog(q, file, options->linear_deflection, options->angle_deflection, options);
                                     if (mesh_dialog.ShowModal() != wxID_OK) {
