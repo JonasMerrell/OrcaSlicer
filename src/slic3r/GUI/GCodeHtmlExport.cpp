@@ -5,6 +5,8 @@
 #include "libvgcode/include/PathVertex.hpp"
 #include "libvgcode/include/Types.hpp"
 #include "libvgcode/include/Viewer.hpp"
+#include "libvgcode/include/GCodeInputData.hpp"
+#include "LibVGCode/LibVGCodeWrapper.hpp"
 
 #include <boost/beast/core/detail/base64.hpp>
 #include <boost/filesystem.hpp>
@@ -13,6 +15,7 @@
 #include <miniz.h>
 
 #include <algorithm>
+#include <functional>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -89,8 +92,12 @@ std::string view_type_name(libvgcode::EViewType type)
     }
 }
 
-std::vector<std::string> role_names()
+std::vector<std::string> role_names(bool translate)
 {
+    if (!translate)
+        return {"Undefined", "Inner wall", "Outer wall", "Overhang wall", "Sparse infill", "Internal solid infill", "Top surface",
+                "Ironing", "Bridge", "Gap infill", "Skirt", "Support", "Support interface", "Prime tower", "Custom",
+                "Bottom surface", "Internal Bridge", "Brim", "Support transition", "Multiple"};
     // Same order as libvgcode::EGCodeExtrusionRole.
     return {_u8L("Undefined"),         _u8L("Inner wall"),         _u8L("Outer wall"),      _u8L("Overhang wall"),
             _u8L("Sparse infill"),  _u8L("Internal solid infill"), _u8L("Top surface"),  _u8L("Ironing"),
@@ -99,14 +106,27 @@ std::vector<std::string> role_names()
             _u8L("Internal Bridge"), _u8L("Brim"),              _u8L("Support transition"), _u8L("Multiple")};
 }
 
-} // namespace
-
-bool export_gcode_html(const libvgcode::Viewer& viewer,
-                       const GCodeHtmlInfo&     info,
-                       const std::string&       template_path,
-                       const std::string&       filename,
-                       std::string&             error)
+// What the page needs, from the preview's viewer or straight from a G-code processor result.
+struct Source
 {
+    size_t                                             count = 0;
+    std::function<const libvgcode::PathVertex&(size_t)> at;
+    const libvgcode::Viewer*                           colors = nullptr; // role and option colors
+    libvgcode::PaletteWithAlpha                        tools;
+    libvgcode::PaletteWithAlpha                        color_prints;
+    libvgcode::EViewType                               view = libvgcode::EViewType::FeatureType;
+    float                                              estimated_time = -1.f; // < 0: sum of the moves
+    std::vector<float>                                 layers_z;              // empty: from the moves
+    bool                                               translate = true;
+};
+
+bool write_html(const Source&        src,
+                const GCodeHtmlInfo& info,
+                const std::string&   template_path,
+                const std::string&   filename,
+                std::string&         error)
+{
+    const libvgcode::Viewer& viewer = *src.colors;
     std::string html;
     {
         boost::nowide::ifstream in(template_path, std::ios::binary);
@@ -124,7 +144,7 @@ bool export_gcode_html(const libvgcode::Viewer& viewer,
         return false;
     }
 
-    const size_t n = viewer.get_vertices_count();
+    const size_t n = src.count;
     if (n == 0) {
         error = "There are no toolpaths to export.";
         return false;
@@ -137,7 +157,7 @@ bool export_gcode_html(const libvgcode::Viewer& viewer,
 
     int32_t last_x = 0, last_y = 0, last_z = 0, last_layer = 0, last_line = 0;
     for (size_t i = 0; i < n; ++i) {
-        const libvgcode::PathVertex& v = viewer.get_vertex_at(i);
+        const libvgcode::PathVertex& v = src.at(i);
         const bool   valid = v.position[0] != FLT_MAX;
         const double x     = valid ? (double(v.position[0]) - info.origin_x) * 1000.0 : last_x;
         const double y     = valid ? (double(v.position[1]) - info.origin_y) * 1000.0 : last_y;
@@ -212,12 +232,24 @@ bool export_gcode_html(const libvgcode::Viewer& viewer,
     meta["vertices"]  = n;
     meta["columns"]   = columns.table();
     meta["raw_size"]  = raw.size();
-    meta["view"]      = view_type_name(viewer.get_view_type());
-    meta["estimated_time"] = viewer.get_estimated_time();
-    meta["layers_z"]  = viewer.get_layers_zs();
+    meta["view"]      = view_type_name(src.view);
+
+    std::vector<float> layers_z = src.layers_z;
+    float              total    = 0.f;
+    for (size_t i = 0; i < n; ++i) {
+        const libvgcode::PathVertex& v = src.at(i);
+        total += v.times[0];
+        if (src.layers_z.empty() && v.is_extrusion()) {
+            if (layers_z.size() <= v.layer_id)
+                layers_z.resize(v.layer_id + 1, 0.f);
+            layers_z[v.layer_id] = std::max(layers_z[v.layer_id], v.position[2]);
+        }
+    }
+    meta["estimated_time"] = src.estimated_time >= 0.f ? src.estimated_time : total;
+    meta["layers_z"]  = layers_z;
 
     nlohmann::json roles = nlohmann::json::array();
-    const std::vector<std::string> names = role_names();
+    const std::vector<std::string> names = role_names(src.translate);
     for (size_t i = 0; i < libvgcode::GCODE_EXTRUSION_ROLES_COUNT; ++i) {
         const libvgcode::Color& c = viewer.get_extrusion_role_color(libvgcode::EGCodeExtrusionRole(i));
         roles.push_back({{"name", i < names.size() ? names[i] : std::to_string(i)}, {"color", hex(c[0], c[1], c[2])}});
@@ -230,8 +262,8 @@ bool export_gcode_html(const libvgcode::Viewer& viewer,
             out.push_back(hex(c[0], c[1], c[2]));
         return out;
     };
-    meta["tools"]        = palette(viewer.get_tool_colors());
-    meta["color_prints"] = palette(viewer.get_color_print_colors());
+    meta["tools"]        = palette(src.tools);
+    meta["color_prints"] = palette(src.color_prints);
     meta["filaments"]    = info.filaments;
 
     const libvgcode::Color& travel = viewer.get_option_color(libvgcode::EOptionType::Travels);
@@ -288,6 +320,47 @@ bool export_gcode_html(const libvgcode::Viewer& viewer,
         }
     }
     return true;
+}
+
+} // namespace
+
+bool export_gcode_html(const libvgcode::Viewer& viewer,
+                       const GCodeHtmlInfo&     info,
+                       const std::string&       template_path,
+                       const std::string&       filename,
+                       std::string&             error)
+{
+    Source src;
+    src.count          = viewer.get_vertices_count();
+    src.at             = [&viewer](size_t i) -> const libvgcode::PathVertex& { return viewer.get_vertex_at(i); };
+    src.colors         = &viewer;
+    src.tools          = viewer.get_tool_colors();
+    src.color_prints   = viewer.get_color_print_colors();
+    src.view           = viewer.get_view_type();
+    src.estimated_time = viewer.get_estimated_time();
+    src.layers_z       = viewer.get_layers_zs();
+    return write_html(src, info, template_path, filename, error);
+}
+
+bool export_gcode_html(const GCodeProcessorResult&     result,
+                       const std::vector<std::string>& tool_colors,
+                       const GCodeHtmlInfo&            info,
+                       const std::string&              template_path,
+                       const std::string&              filename,
+                       std::string&                    error)
+{
+    // A viewer that is never loaded or rendered: only its default colors are used, so no
+    // OpenGL context is needed.
+    libvgcode::Viewer              viewer;
+    const libvgcode::GCodeInputData data = libvgcode::convert(result, tool_colors, {}, viewer);
+    Source src;
+    src.count        = data.vertices.size();
+    src.at           = [&data](size_t i) -> const libvgcode::PathVertex& { return data.vertices[i]; };
+    src.colors       = &viewer;
+    src.tools        = data.tools_colors;
+    src.color_prints = data.color_print_colors;
+    src.translate    = false;
+    return write_html(src, info, template_path, filename, error);
 }
 
 } // namespace GUI
