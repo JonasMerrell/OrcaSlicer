@@ -4893,6 +4893,114 @@
    "category": "Advanced",
    "cli": "orca-slice --set mmu_segmented_region_max_width=V; --set-object / job objects[].settings"
   },
+  "nonplanar_infill": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "bool",
+   "category": "Strength",
+   "cli": "orca-slice --set nonplanar_infill=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "nonplanar_infill_amplitude": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float_or_percent",
+   "category": "Strength",
+   "cli": "orca-slice --set nonplanar_infill_amplitude=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "nonplanar_infill_angle": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set nonplanar_infill_angle=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "nonplanar_infill_blend_layers": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "int",
+   "category": "Strength",
+   "cli": "orca-slice --set nonplanar_infill_blend_layers=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "nonplanar_infill_edge_blend": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set nonplanar_infill_edge_blend=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "nonplanar_infill_max_dz": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set nonplanar_infill_max_dz=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "nonplanar_infill_pattern": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "enum",
+   "category": "Strength",
+   "cli": "orca-slice --set nonplanar_infill_pattern=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "nonplanar_infill_phase_shift": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set nonplanar_infill_phase_shift=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "nonplanar_infill_wavelength": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set nonplanar_infill_wavelength=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
   "notes": {
    "preset": "process",
    "scopes": [
