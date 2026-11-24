@@ -670,6 +670,9 @@ private:
     // so the G-code stage applies wave_overhang_perimeter_speed (wave layers) or
     // wave_overhang_floor_perimeter_speed (floor layers) to those walls.
     void tag_wave_overhang_perimeters();
+    // Orca: Z-pinning. Runs after the walls: cuts the pin channels out of the infill, clips the inner
+    // walls they cross, adds a wall around each channel and plans the injections (ZPins/ZPins.cpp).
+    void generate_z_pins();
     void combine_infill();
     void _generate_support_material();
     FillAdaptive::RegionOctrees prepare_adaptive_infill_data(

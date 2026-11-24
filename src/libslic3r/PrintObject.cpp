@@ -74,6 +74,7 @@
 #include <utility>
 
 #include <boost/log/trivial.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 #include <Eigen/Core>
 
 #include <tbb/parallel_for.h>
@@ -642,6 +643,10 @@ void PrintObject::make_perimeters()
     );
     m_print->throw_if_canceled();
     BOOST_LOG_TRIVIAL(debug) << "Generating perimeters in parallel - end";
+
+    // Orca: Z-pins need the walls and the infill areas of every layer, and are redone with them.
+    this->generate_z_pins();
+    m_print->throw_if_canceled();
 
     this->set_done(posPerimeters);
 }
@@ -1606,6 +1611,9 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "interlocking_boundary_avoidance"
             || opt_key == "interlocking_beam_width") {
             steps.emplace_back(posSlice);
+        } else if (boost::starts_with(opt_key, "z_pin")) {
+            // Orca: Z-pins are generated at the end of the wall step and cut the infill areas.
+            steps.emplace_back(posPerimeters);
 		} else if (
                opt_key == "elefant_foot_compensation"
             || opt_key == "elefant_foot_compensation_layers"

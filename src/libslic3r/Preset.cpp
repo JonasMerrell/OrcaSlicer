@@ -1547,6 +1547,9 @@ static std::vector<std::string> s_Preset_print_options{
     "interlocking_beam_layer_count",
     "interlocking_depth",
     "interlocking_boundary_avoidance",
+    "z_pins", "z_pin_diameter", "z_pin_spacing", "z_pin_pattern", "z_pin_in_sparse_infill", "z_pin_in_inner_walls",
+    "z_pin_in_solid_infill", "z_pin_interval", "z_pin_alternate", "z_pin_overfill", "z_pin_injection_speed",
+    "z_pin_injection_height", "z_pin_dwell", "z_pin_top_margin", "z_pin_bottom_margin",
     "interlocking_beam_width",
     "calib_flowrate_topinfill_special_order",
     // IDEX/IQEX parallel print mode (per-print selection)

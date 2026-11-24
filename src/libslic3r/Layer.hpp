@@ -15,6 +15,7 @@
 #include <string>
 #include <functional>
 #include "ExPolygon.hpp"
+#include "ZPins/ZPins.hpp"
 
 namespace Slic3r { class ExtrusionLoop; }
 namespace Slic3r { class ExtrusionMultiPath; }
@@ -193,6 +194,11 @@ public:
     // wave-covered regions from detected overhangs, so supports only fill
     // the residual (uncovered) areas.
     Polygons                wave_overhang_covered_polygons;
+
+    // Orca: Z-pins (PrintObject::generate_z_pins). Centres of the channels open on this layer, and
+    // the injections GCode emits right after this layer is printed. Object coordinates.
+    Points                      z_pin_holes;
+    std::vector<ZPinInjection>  z_pin_injections;
 
     // Orca: wave-overhang "shadow" region on this layer — the subset of the
     // layer that was force-classified as stBottomBridge by the wave-overhang
