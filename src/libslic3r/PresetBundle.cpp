@@ -184,6 +184,8 @@ static std::vector<std::string> s_project_options {
 // assertions in tests/libslic3r/test_preset_bundle_loading.cpp guard both directions.
 static std::vector<std::string> s_project_options_published{"wipe_tower_x", "wipe_tower_y", "wipe_tower_rotation_angle"};
 
+const std::vector<std::string>& PresetBundle::project_options() { return s_project_options; }
+
 //Orca: add custom as default
 const char *PresetBundle::ORCA_DEFAULT_BUNDLE = "Custom";
 const char *PresetBundle::ORCA_DEFAULT_PRINTER_MODEL = "MyKlipper 0.4 nozzle";
