@@ -288,6 +288,15 @@ static t_config_enum_values s_keys_map_WaveOverhangPattern {
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(WaveOverhangPattern)
 
+// Orca: staircase wave overhangs, pattern of the upper steps.
+static t_config_enum_values s_keys_map_WaveStaircasePattern {
+    { "waves",       int(WaveStaircasePattern::Waves) },
+    { "rectilinear", int(WaveStaircasePattern::Rectilinear) },
+    { "hilbert",     int(WaveStaircasePattern::Hilbert) },
+    { "concentric",  int(WaveStaircasePattern::Concentric) }
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(WaveStaircasePattern)
+
 static t_config_enum_values s_keys_map_FuzzySkinType {
     { "none",           int(FuzzySkinType::None) },
     { "external",       int(FuzzySkinType::External) },
@@ -6206,6 +6215,112 @@ void PrintConfigDef::init_fff_params()
     def->min = 0;
     def->max = 20;
     def->set_default_value(new ConfigOptionInt(2));
+
+    def = this->add("wave_overhang_staircase", coBool);
+    def->label = L("Staircase (multi-layer waves)");
+    def->category = L("Strength");
+    def->tooltip = L("Print the wave overhang several layers at once as a staircase that advances outward: "
+                     "the wave layer's front leads, the layer above follows a stagger behind it, the next one "
+                     "behind that, and so on. The free edge is held down while it is still warm and the part "
+                     "being built is several layers thick, so long overhangs curl less. The nozzle moves up "
+                     "and down within the layer; travels lift over the higher steps.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("wave_overhang_staircase_layers", coInt);
+    def->label = L("Staircase layers");
+    def->category = L("Strength");
+    def->tooltip = L("Layers printed together in a staircase band, the wave layer included. Limited by "
+                     "\"Staircase max height\" and by how much room there is above the nozzle tip.");
+    def->sidetext = L("layers");
+    def->mode = comAdvanced;
+    def->min = 2;
+    def->max = 8;
+    def->set_default_value(new ConfigOptionInt(3));
+
+    def = this->add("wave_overhang_staircase_stagger", coFloat);
+    def->label = L("Staircase stagger");
+    def->category = L("Strength");
+    def->tooltip = L("Smallest horizontal distance from the nozzle centre to the edge of material that is higher "
+                     "than the nozzle tip: the radius of the nozzle's flat tip plus a margin. Each step trails "
+                     "the one below by this much, and the steps keep this far from anything printed later at a "
+                     "lower height.");
+    def->sidetext = L("mm");
+    def->mode = comAdvanced;
+    def->min = 0.5;
+    def->max = 10;
+    def->set_default_value(new ConfigOptionFloat(2.0));
+
+    def = this->add("wave_overhang_staircase_rings_per_step", coInt);
+    def->label = L("Staircase rings per round");
+    def->category = L("Strength");
+    def->tooltip = L("How many wave rings the front advances before the upper steps follow. Fewer rings "
+                     "keep the steps closer together; more rings mean fewer up and down moves.");
+    def->mode = comAdvanced;
+    def->min = 1;
+    def->max = 50;
+    def->set_default_value(new ConfigOptionInt(3));
+
+    def = this->add("wave_overhang_staircase_pattern", coEnum);
+    def->label = L("Staircase upper pattern");
+    def->category = L("Strength");
+    def->tooltip = L("Pattern of the layers above the wave layer within the band: rings that follow the wave "
+                     "front (waves), or rectilinear, Hilbert curve or concentric solid infill cut into the same "
+                     "bands as the front.");
+    def->enum_keys_map = &ConfigOptionEnum<WaveStaircasePattern>::get_enum_values();
+    def->enum_values.push_back("waves");
+    def->enum_values.push_back("rectilinear");
+    def->enum_values.push_back("hilbert");
+    def->enum_values.push_back("concentric");
+    def->enum_labels.push_back(L("Waves"));
+    def->enum_labels.push_back(L("Rectilinear"));
+    def->enum_labels.push_back(L("Hilbert curve"));
+    def->enum_labels.push_back(L("Concentric"));
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<WaveStaircasePattern>(WaveStaircasePattern::Waves));
+
+    def = this->add("wave_overhang_staircase_max_height", coFloat);
+    def->label = L("Staircase max height");
+    def->category = L("Strength");
+    def->tooltip = L("Largest height of the top step above the wave layer. The toolhead passes over the band "
+                     "at the wave layer's height, so keep this below the lowest part of the toolhead above the "
+                     "nozzle tip (duct, probe) minus a margin. Layers beyond it are left out of the band.");
+    def->sidetext = L("mm");
+    def->mode = comAdvanced;
+    def->min = 0.05;
+    def->max = 5;
+    def->set_default_value(new ConfigOptionFloat(0.6));
+
+    def = this->add("wave_overhang_staircase_travel_lift", coFloat);
+    def->label = L("Staircase travel lift");
+    def->category = L("Strength");
+    def->tooltip = L("Travels that pass within the stagger of a printed step higher than the nozzle are lifted "
+                     "this far above the highest such step, and come down only at their destination.");
+    def->sidetext = L("mm");
+    def->mode = comAdvanced;
+    def->min = 0.05;
+    def->max = 5;
+    def->set_default_value(new ConfigOptionFloat(0.4));
+
+    def = this->add("wave_overhang_staircase_speed", coFloat);
+    def->label = L("Staircase step speed");
+    def->category = L("Strength");
+    def->tooltip = L("Print speed of the upper steps of a staircase band. 0 = solid infill speed.");
+    def->sidetext = L("mm/s");
+    def->mode = comAdvanced;
+    def->min = 0;
+    def->set_default_value(new ConfigOptionFloat(0.));
+
+    def = this->add("wave_overhang_staircase_min_round_time", coFloat);
+    def->label = L("Staircase min round time");
+    def->category = L("Strength");
+    def->tooltip = L("Shortest time for one round of a staircase band (the front advances, then each step "
+                     "follows). A shorter round ends with the nozzle lifted and a dwell, so the steps cool "
+                     "before the next ones go on top. 0 = off.");
+    def->sidetext = L("s");
+    def->mode = comAdvanced;
+    def->min = 0;
+    def->set_default_value(new ConfigOptionFloat(0.));
 
     def = this->add("wave_overhang_floor_use_hilbert", coBool);
     def->label = L("Hilbert curve floor");

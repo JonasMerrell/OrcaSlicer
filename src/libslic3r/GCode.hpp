@@ -893,6 +893,22 @@ protected:
     // closed by the next non-wave path or the layer end). -1 = not active.
     int                                 m_wave_temp_tool = -1;
     int                                 m_wave_temp_restore = 0;
+    // Orca: staircase wave overhangs. Steps printed above the current nozzle height, in G-code
+    // coordinates (scaled mm), kept until the layers reach them. A travel that passes within
+    // `radius` of one lifts to its top + `lift` first and comes down at its destination.
+    struct StaircaseObstacle
+    {
+        Polyline    pl;
+        BoundingBox bbox;   // pl's, inflated by radius
+        double      top_z;
+        coord_t     radius;
+        double      lift;
+    };
+    std::vector<StaircaseObstacle>      m_staircase_obstacles;
+    double                              m_staircase_round_time = 0.;
+    // Highest Z a travel along `travel` (print coordinates) must keep over steps higher than
+    // above_z, -inf if none.
+    double                              staircase_travel_clearance_z(const Polyline &travel, double above_z) const;
     std::string                         wave_temp_restore_gcode();
 
     std::unique_ptr<CoolingBuffer>      m_cooling_buffer;

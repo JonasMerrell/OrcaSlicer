@@ -16,6 +16,7 @@
 #include "Geometry.hpp"
 #include "I18N.hpp"
 #include "Layer.hpp"
+#include "WaveOverhangs/WaveStaircase.hpp"
 #include "MutablePolygon.hpp"
 #include "PerimeterGenerator.hpp"
 #include "PrintBase.hpp"
@@ -837,6 +838,11 @@ void PrintObject::prepare_infill()
     this->tag_wave_overhang_perimeters();
     m_print->throw_if_canceled();
 
+    // Orca: staircase wave overhangs. Needs the settled wave floor surfaces and runs before
+    // combine_infill, which would merge the fill the band takes out of the layers above.
+    WaveOverhangs::Staircase::apply(*this);
+    m_print->throw_if_canceled();
+
     // combine fill surfaces to honor the "infill every N layers" option
     this->combine_infill();
     m_print->throw_if_canceled();
@@ -1563,6 +1569,20 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "wipe_on_loops"
             || opt_key == "wipe_speed") {
             steps.emplace_back(posPerimeters);
+        } else if (
+               opt_key == "wave_overhang_staircase"
+            || opt_key == "wave_overhang_staircase_layers"
+            || opt_key == "wave_overhang_staircase_stagger"
+            || opt_key == "wave_overhang_staircase_rings_per_step"
+            || opt_key == "wave_overhang_staircase_pattern"
+            || opt_key == "wave_overhang_staircase_max_height") {
+            // Orca: the staircase pass runs in prepare_infill and undoes its previous run.
+            steps.emplace_back(posPrepareInfill);
+        } else if (
+               opt_key == "wave_overhang_staircase_travel_lift"
+            || opt_key == "wave_overhang_staircase_speed"
+            || opt_key == "wave_overhang_staircase_min_round_time") {
+            invalidated |= m_print->invalidate_step(psGCodeExport);
         } else if (
             opt_key == "small_area_infill_flow_compensation_model") {
             steps.emplace_back(posSlice);

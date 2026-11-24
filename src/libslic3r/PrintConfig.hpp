@@ -140,6 +140,14 @@ enum class WaveOverhangPattern : int {
     Smart
 };
 
+// Orca: pattern of the upper steps of a staircase wave band.
+enum class WaveStaircasePattern : int {
+    Waves,
+    Rectilinear,
+    Hilbert,
+    Concentric
+};
+
 enum AuthorizationType {
     atKeyPassword, atUserPassword
 };
@@ -859,6 +867,7 @@ CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(AdaptiveInfillGradient)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveOverhangSpacingMode)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveOverhangSeamMode)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveOverhangPattern)
+CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveStaircasePattern)
 
 #undef CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS
 
@@ -1596,6 +1605,15 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionInt,                       wave_overhang_floor_speed_ramp))
     ((ConfigOptionInt,                       wave_overhang_floor_fan_speed))
     ((ConfigOptionInt,                       wave_overhang_floor_aux_fan_speed))
+    ((ConfigOptionBool,                      wave_overhang_staircase))
+    ((ConfigOptionInt,                       wave_overhang_staircase_layers))
+    ((ConfigOptionFloat,                     wave_overhang_staircase_stagger))
+    ((ConfigOptionInt,                       wave_overhang_staircase_rings_per_step))
+    ((ConfigOptionEnum<WaveStaircasePattern>, wave_overhang_staircase_pattern))
+    ((ConfigOptionFloat,                     wave_overhang_staircase_max_height))
+    ((ConfigOptionFloat,                     wave_overhang_staircase_travel_lift))
+    ((ConfigOptionFloat,                     wave_overhang_staircase_speed))
+    ((ConfigOptionFloat,                     wave_overhang_staircase_min_round_time))
     ((ConfigOptionInt,                       wave_overhang_nozzle_temp))
     ((ConfigOptionFloat,                     wave_overhang_min_wave_time))
     ((ConfigOptionFloat,                     wave_overhang_min_layer_time))

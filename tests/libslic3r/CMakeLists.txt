@@ -86,6 +86,7 @@ add_executable(${_TEST_NAME}_tests
     test_wipe_path.cpp
     test_slicing.cpp
     test_wave_overhangs.cpp
+    test_wave_staircase.cpp
     test_optimizers.cpp
     test_ordering_strategies.cpp
     test_parameter_utils.cpp

@@ -15,9 +15,10 @@ Sections below follow the **Print Settings → Wave overhangs** page top to bott
 7. [Motion](#motion)
 8. [Cooling](#cooling)
 9. [Floor layers](#floor-layers)
-10. [Debug](#debug)
-11. [Known limitations](#known-limitations)
-12. [G-code markers](#g-code-markers)
+10. [Staircase (multi-layer waves)](#staircase-multi-layer-waves)
+11. [Debug](#debug)
+12. [Known limitations](#known-limitations)
+13. [G-code markers](#g-code-markers)
 
 ---
 
@@ -326,6 +327,35 @@ Auxiliary fan percentage forced during the Hilbert floor layers. Pair with a low
 
 - **Type:** int (%) · **Default:** `-1` (= inherit) · **Range:** `-1 to 100`
 - Requires the printer profile's auxiliary fan to be enabled.
+
+---
+
+## Staircase (multi-layer waves)
+
+A wave overhang is one layer printed in mid air, so a long one is flimsy and its free edge curls while it cools. With the staircase on, the wave layer and the next `wave_overhang_staircase_layers - 1` layers above the overhang are printed together, inside the wave layer. The wave front advances a few rings, then the layer above follows one stagger behind it at Z+h, the next one a stagger behind that at Z+2h, and so on. The band grows outward together, so the free edge is held down while it is still warm. The cantilever being built is N layers thick, and stiffness goes with thickness cubed, so 3 layers are about 27 times stiffer than 1.
+
+How it works (`src/libslic3r/WaveOverhangs/WaveStaircase.{hpp,cpp}`, pass in `WaveStaircasePrint.cpp`):
+
+- **Step regions.** Step k (layer L+k) lies on step k-1, inside the fill area of L+k (its walls are printed normally later). It stays `stagger + line width` away from everything layer L+k-1 prints later at the lower height, so the nozzle tip never meets a higher step. That makes the steps taper toward the free edge and the sides. They also reach back over the supported side, so the root of the cantilever is full height. The band prints these areas, and they are removed from the fill of L+1 .. L+N-1.
+- **Order.** A distance field from the supported edge (geodesic, like the wave fronts) cuts the band into bands of `wave_overhang_staircase_rings_per_step` rings. Each round the wave front advances one band. Then each step prints whatever no lower, still unprinted material lies within the stagger of, nearest first. The band prints after the island's infill (like walls that wait for their infill), so nothing else on layer L lands next to the steps afterwards.
+- **G-code.** Step paths are z-contoured paths at +dz, extruded at their own layer's flow (no contour flow scaling). The wave fan and nozzle temperature overrides cover the whole band. A travel that passes within the stagger of a printed step higher than both of its ends is lifted `wave_overhang_staircase_travel_lift` above the step first, crosses at that height, and comes down only at its destination (`; wave staircase: clear the higher steps` with G-code comments on). This holds on the following layers too, until they reach the steps.
+- **Height.** The toolhead passes over the band at the wave layer's height, so (N-1)·h must stay below the lowest toolhead part above the nozzle tip minus a margin. `wave_overhang_staircase_max_height` caps it. Layers beyond the cap are left out of the band.
+
+| Setting | Default | |
+|---|---|---|
+| `wave_overhang_staircase` | off | turns it on (needs `wave_overhangs`) |
+| `wave_overhang_staircase_layers` | 3 | layers per band, wave layer included (2-8) |
+| `wave_overhang_staircase_stagger` | 2.0 mm | nozzle centre to the edge of higher material: the tip's flat radius plus a margin |
+| `wave_overhang_staircase_rings_per_step` | 3 | wave rings the front advances per round |
+| `wave_overhang_staircase_pattern` | waves | upper steps: waves (rings along the front), rectilinear, hilbert, concentric |
+| `wave_overhang_staircase_max_height` | 0.6 mm | cap on the top step's height above the wave layer |
+| `wave_overhang_staircase_travel_lift` | 0.4 mm | travel height above the highest nearby step |
+| `wave_overhang_staircase_speed` | 0 | upper step speed, 0 = solid infill speed |
+| `wave_overhang_staircase_min_round_time` | 0 s | a shorter round ends lifted, with a dwell |
+
+Headless: all of them are region settings, so `orca-slice --set wave_overhang_staircase=1` and per-object `print_params` in `--load-assemble-list` work. Tests: `[WaveOverhangs][Staircase]` (libslic3r and fff_print) and `ctest -R cli_wave_staircase`.
+
+Limits: support material is generated after this pass and is not kept away from the steps (travels are still lifted). The G-code preview groups the steps with the wave layer. Combining it with Z anti-aliasing, brick layers or non-planar infill is untested.
 
 ---
 

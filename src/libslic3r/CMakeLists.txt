@@ -146,6 +146,9 @@ set(lisbslic3r_sources
     ExtrusionEntity.hpp
     WaveOverhangs/WaveOverhangs.cpp
     WaveOverhangs/WaveOverhangs.hpp
+    WaveOverhangs/WaveStaircase.cpp
+    WaveOverhangs/WaveStaircase.hpp
+    WaveOverhangs/WaveStaircasePrint.cpp
     ExtrusionSimulator.cpp
     ExtrusionSimulator.hpp
     FaceDetector.cpp

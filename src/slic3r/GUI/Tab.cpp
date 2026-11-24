@@ -3239,6 +3239,17 @@ void TabPrint::build()
         optgroup->append_single_option_line("wave_overhang_floor_fan_speed");
         optgroup->append_single_option_line("wave_overhang_floor_aux_fan_speed");
 
+        optgroup = page->new_optgroup(L("Staircase"), L"param_overhang");
+        optgroup->append_single_option_line("wave_overhang_staircase");
+        optgroup->append_single_option_line("wave_overhang_staircase_layers");
+        optgroup->append_single_option_line("wave_overhang_staircase_stagger");
+        optgroup->append_single_option_line("wave_overhang_staircase_rings_per_step");
+        optgroup->append_single_option_line("wave_overhang_staircase_pattern");
+        optgroup->append_single_option_line("wave_overhang_staircase_max_height");
+        optgroup->append_single_option_line("wave_overhang_staircase_travel_lift");
+        optgroup->append_single_option_line("wave_overhang_staircase_speed");
+        optgroup->append_single_option_line("wave_overhang_staircase_min_round_time");
+
         optgroup = page->new_optgroup(L("Debug"), L"param_overhang");
         optgroup->append_single_option_line("wave_overhang_debug_gcode");
 

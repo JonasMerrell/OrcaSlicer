@@ -85,6 +85,10 @@ public:
     // (this collection contains only ExtrusionEntityCollection objects)
     ExtrusionEntityCollection   perimeters;
 
+    // Orca: staircase wave overhangs. The wave paths a band took out of an island collection
+    // (index into perimeters.entities), so the pass can be undone when prepare_infill runs again.
+    std::vector<std::pair<size_t, ExtrusionPaths>> wave_staircase_stash;
+
     // ordered collection of extrusion paths to fill surfaces
     // (this collection contains only ExtrusionEntityCollection objects)
     ExtrusionEntityCollection   fills;

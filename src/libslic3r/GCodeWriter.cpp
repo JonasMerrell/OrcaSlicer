@@ -1196,6 +1196,22 @@ std::string GCodeWriter::travel_to_z(double z, const std::string &comment, bool 
     return this->_travel_to_z(z, comment);
 }
 
+std::string GCodeWriter::clearance_lift(double z_clear, double z_target, const std::string &comment)
+{
+    const double old_nominal = m_pos(2) - m_lifted;
+    double       top         = std::max(z_clear, m_pos(2));
+    if (std::abs(m_to_lift) > EPSILON)
+        top = std::max(top, m_pos(2) + m_to_lift);
+    m_to_lift = 0.;
+    std::string out;
+    if (top > m_pos(2) + EPSILON)
+        out = this->_travel_to_z(top, comment);
+    m_lifted = m_pos(2) - std::min(old_nominal, z_target);
+    if (m_lifted < EPSILON)
+        m_lifted = 0.;
+    return out;
+}
+
 std::string GCodeWriter::_travel_to_z(double z, const std::string &comment)
 {
     m_pos(2) = z;
