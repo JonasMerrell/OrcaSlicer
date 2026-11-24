@@ -159,6 +159,7 @@
 #include "slic3r/GUI/Jobs/SendJob.hpp"
 #include <boost/nowide/convert.hpp>
 #include <stdio.h>
+#include "libslic3r/Clearance/ToolheadClearance.hpp"
 
 namespace fs = boost::filesystem;
 using json = nlohmann::json;
@@ -1505,6 +1506,77 @@ int CLI::run(int argc, char **argv)
                 }
             }
         }
+    }
+
+    // Fork: --check-toolhead-clearance file.gcode checks existing G-code against the toolhead shape
+    // from --load-settings, prints the JSON report and exits. No model, no slicing.
+    if (std::find(m_actions.begin(), m_actions.end(), "check_toolhead_clearance") != m_actions.end()) {
+        static const std::set<std::string> check_compatible = { "check_toolhead_clearance", "uptodate", "load_defaultfila", "min_save",
+                                                                "mtcpp", "mstpp", "no_check", "normative_check", "pipe" };
+        for (const std::string &action : m_actions)
+            if (check_compatible.count(action) == 0) {
+                std::string flag = action;
+                std::replace(flag.begin(), flag.end(), '_', '-');
+                boost::nowide::cerr << "--check-toolhead-clearance cannot be combined with --" << flag << std::endl;
+                record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, cli_errors[CLI_INVALID_PARAMS], sliced_info);
+                flush_and_exit(CLI_INVALID_PARAMS);
+            }
+        const std::string gcode_file = m_config.opt_string("check_toolhead_clearance");
+        if (gcode_file.empty() || !boost::filesystem::exists(gcode_file)) {
+            boost::nowide::cerr << "--check-toolhead-clearance: no such G-code file: " << gcode_file << std::endl;
+            record_exit_reson(outfile_dir, CLI_FILE_NOTFOUND, 0, cli_errors[CLI_FILE_NOTFOUND], sliced_info);
+            flush_and_exit(CLI_FILE_NOTFOUND);
+        }
+        DynamicPrintConfig cfg = DynamicPrintConfig::full_print_config();
+        for (const std::string &file : load_configs) {
+            DynamicPrintConfig                 one;
+            std::map<std::string, std::string> key_values;
+            std::string                        reason;
+            try {
+                one.load_from_json(file, config_substitution_rule, key_values, reason);
+            } catch (const std::exception &ex) {
+                reason = ex.what();
+            }
+            if (!reason.empty()) {
+                boost::nowide::cerr << "--check-toolhead-clearance: can't load " << file << ": " << reason << std::endl;
+                record_exit_reson(outfile_dir, CLI_CONFIG_FILE_ERROR, 0, cli_errors[CLI_CONFIG_FILE_ERROR], sliced_info);
+                flush_and_exit(CLI_CONFIG_FILE_ERROR);
+            }
+            cfg.apply(one, true);
+        }
+        cfg.set_key_value("toolhead_clearance_enable", new ConfigOptionBool(true));
+        PrintConfig pcfg;
+        pcfg.apply(cfg, true);
+        std::string              shape_err;
+        Clearance::ToolheadShape shape = Clearance::ToolheadShape::from_config(pcfg, &shape_err);
+        if (shape.empty()) {
+            boost::nowide::cerr << "--check-toolhead-clearance: "
+                                << (shape_err.empty() ? std::string("no toolhead_clearance_profile or toolhead_clearance_mesh in --load-settings") : shape_err)
+                                << std::endl;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, cli_errors[CLI_INVALID_PARAMS], sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+        BoundingBoxf plate_box;
+        for (const Vec2d &pt : pcfg.printable_area.values)
+            plate_box.merge(pt);
+        plate_box.offset(20.);
+        Clearance::Options copt;
+        copt.margin = pcfg.toolhead_clearance_margin.value;
+        Clearance::GCodeCheckReport crep = Clearance::check_gcode(gcode_file, shape, plate_box, copt);
+        const std::string json_out = crep.to_json();
+        boost::nowide::cout << json_out << std::endl;
+        if (!outfile_dir.empty()) {
+            boost::filesystem::path cpath = boost::filesystem::path(outfile_dir) / boost::filesystem::path(gcode_file).filename();
+            cpath.replace_extension(".clearance.json");
+            boost::nowide::ofstream cf(cpath.string());
+            cf << json_out << std::endl;
+        }
+        if (crep.collisions > 0)
+            cli_record_warning(sliced_info, "toolhead_collision",
+                               nlohmann::json{{"collisions", crep.collisions}, {"first_line", crep.first.empty() ? 0 : crep.first[0].line}});
+        const int check_rc = crep.ran ? CLI_SUCCESS : CLI_INVALID_PARAMS;
+        record_exit_reson(outfile_dir, check_rc, 0, crep.ran ? cli_errors[CLI_SUCCESS] : crep.error, sliced_info);
+        flush_and_exit(check_rc);
     }
 
     // ORCA headless-cli: --list-options writes the option catalog and exits; it needs no input.
@@ -7450,6 +7522,37 @@ int CLI::run(int argc, char **argv)
                                         else {
                                             BOOST_LOG_TRIVIAL(error) << "plate " << index + 1 << ": HTML export failed: " << html_error;
                                             std::cerr << "HTML export failed: " << html_error << std::endl;
+                                        }
+                                    }
+                                    // Fork: toolhead clearance check of the finished G-code (non-planar printing).
+                                    // Off unless toolhead_clearance_enable; the report goes next to the G-code as
+                                    // plate_N.clearance.json and collisions become a "toolhead_collision" warning.
+                                    if (print_fff->config().toolhead_clearance_enable.value) {
+                                        std::string shape_err;
+                                        Clearance::ToolheadShape shape = Clearance::ToolheadShape::from_config(print_fff->config(), &shape_err);
+                                        BoundingBoxf plate_box;
+                                        for (const Vec2d& pt : print_fff->config().printable_area.values)
+                                            plate_box.merge(pt);
+                                        plate_box.offset(20.);
+                                        Clearance::Options copt;
+                                        copt.margin = print_fff->config().toolhead_clearance_margin.value;
+                                        Clearance::GCodeCheckReport crep;
+                                        if (shape.empty())
+                                            crep.error = shape_err.empty() ? std::string("toolhead_clearance_enable is set but no profile or mesh is given") : shape_err;
+                                        else
+                                            crep = Clearance::check_gcode(outfile, shape, plate_box, copt);
+                                        boost::filesystem::path cpath(outfile);
+                                        cpath.replace_extension(".clearance.json");
+                                        if (!outfile_dir.empty()) {
+                                            boost::nowide::ofstream cf(cpath.string());
+                                            cf << crep.to_json() << std::endl;
+                                        }
+                                        BOOST_LOG_TRIVIAL(info) << "plate " << index + 1 << ": toolhead clearance: " << crep.to_json();
+                                        if (crep.collisions > 0 || !crep.error.empty()) {
+                                            std::cerr << "toolhead clearance: " << (crep.error.empty() ? std::to_string(crep.collisions) + " colliding move(s), first at line " + std::to_string(crep.first.empty() ? 0 : crep.first[0].line) : crep.error) << std::endl;
+                                            cli_record_warning(sliced_info, crep.error.empty() ? "toolhead_collision" : "toolhead_clearance_error",
+                                                               nlohmann::json{{"plate", index + 1}, {"collisions", crep.collisions}, {"error", crep.error},
+                                                                              {"first_line", crep.first.empty() ? 0 : crep.first[0].line}});
                                         }
                                     }
 

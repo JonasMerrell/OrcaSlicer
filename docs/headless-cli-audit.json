@@ -7609,6 +7609,42 @@
    "category": "Advanced",
    "cli": "orca-slice --set toolchange_ordering=V"
   },
+  "toolhead_clearance_enable": {
+   "preset": "printer",
+   "scopes": [
+    "global"
+   ],
+   "type": "bool",
+   "category": "",
+   "cli": "orca-slice --set toolhead_clearance_enable=V"
+  },
+  "toolhead_clearance_margin": {
+   "preset": "printer",
+   "scopes": [
+    "global"
+   ],
+   "type": "float",
+   "category": "",
+   "cli": "orca-slice --set toolhead_clearance_margin=V"
+  },
+  "toolhead_clearance_mesh": {
+   "preset": "printer",
+   "scopes": [
+    "global"
+   ],
+   "type": "string",
+   "category": "",
+   "cli": "orca-slice --set toolhead_clearance_mesh=V"
+  },
+  "toolhead_clearance_profile": {
+   "preset": "printer",
+   "scopes": [
+    "global"
+   ],
+   "type": "points",
+   "category": "",
+   "cli": "orca-slice --set toolhead_clearance_profile=V / --set toolhead_clearance_profile[N]=V (extruder N)"
+  },
   "top_bottom_infill_wall_overlap": {
    "preset": "process",
    "scopes": [
@@ -8975,6 +9011,7 @@
   "avoid_extrusion_cali_region",
   "calib",
   "calib_params",
+  "check_toolhead_clearance",
   "clone_objects",
   "convert_unit",
   "datadir",
