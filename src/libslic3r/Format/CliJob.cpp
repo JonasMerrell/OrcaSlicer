@@ -776,9 +776,8 @@ BuiltObject build_object(const json &o, const std::string &where, const std::str
             DynamicPrintConfig cfg;
             if (r.contains("settings"))
                 apply_settings(r["settings"], rw + ".settings", Scope::LayerRange, cfg);
-            // The slicer reads layer_height from every range (the GUI always stores it).
-            if (!cfg.has("layer_height"))
-                cfg.set_key_value("layer_height", new ConfigOptionFloat(0.));
+            // A range without layer_height gets the object's layer height in the CLI once the
+            // presets are known (the slicer needs it in every range; the GUI always stores it).
             if (cfg.has("extruder"))
                 used_filaments.insert(cfg.opt_int("extruder"));
             obj->layer_config_ranges[{lo, hi}].assign_config(std::move(cfg));

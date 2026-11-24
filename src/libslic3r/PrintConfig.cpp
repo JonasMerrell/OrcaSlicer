@@ -13392,6 +13392,16 @@ CLIActionsConfigDef::CLIActionsConfigDef()
                      "alternative to opening the paint gizmos in the GUI.");
     def->set_default_value(new ConfigOptionBool(false));
 
+    // Fork (headless CLI): machine-readable option catalog, see CliOptionCatalog.hpp.
+    def = this->add("list_options", coString);
+    def->label = L("List options (JSON)");
+    def->tooltip = L("Write a JSON catalog of every setting and every command line option, then exit: type, default, "
+                     "allowed values, limits, label, tooltip, and where each setting can be set (process, filament or "
+                     "printer preset, project, per object, per part or modifier, per height range, per plate). "
+                     "Use - to write it to stdout.");
+    def->cli_params = "options.json";
+    def->set_default_value(new ConfigOptionString("-"));
+
     def = this->add("export_settings", coString);
     def->label = L("Export Settings");
     def->tooltip = L("This exports settings to a file. Use - to write them to stdout.");
@@ -13658,6 +13668,18 @@ CLIMiscConfigDef::CLIMiscConfigDef()
                      "(fast tower). input_shaping_damp: freq_x=30,freq_y=30,start=0,end=0.4,shaper,model. cornering: start=1,end=15 "
                      "(jerk; 0 and 0.25 with junction deviation),model=0|1|2 (2 = SCV-V2).");
     def->cli_params = "\"key=value,...\"";
+    def->set_default_value(new ConfigOptionString());
+
+    // Fork (headless CLI): docs/headless-cli.md describes the job format.
+    def = this->add("load_job", coString);
+    def->label = L("Load job file");
+    def->tooltip = L("Build the project from a JSON job file instead of model files: objects from mesh files or "
+                     "primitives with their transforms, per-object, per-part and per-height-range settings, "
+                     "modifiers, negative parts, support enforcers and blockers, painting by face selection rules "
+                     "(supports, seams, fuzzy skin, colour), cuts, filament assignment and plates with their own "
+                     "settings. Cannot be combined with model files, transforms or --load-assemble-list. "
+                     "See docs/headless-cli.md.");
+    def->cli_params = "job.json";
     def->set_default_value(new ConfigOptionString());
 
     /*def = this->add("output", coString);

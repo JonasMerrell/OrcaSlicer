@@ -37,6 +37,8 @@
 #include <algorithm>
 #include "libslic3r/Format/bbs_3mf.hpp"
 #include "libslic3r/Format/AssembleList.hpp"
+#include "libslic3r/Format/CliJob.hpp"
+#include "libslic3r/CliOptionCatalog.hpp"
 #include <cstdlib>
 #include <stdlib.h>
 #include <stdexcept>
@@ -1456,7 +1458,7 @@ int CLI::run(int argc, char **argv)
             }
         }
         // Without input there is nothing to inspect; fail rather than print nothing and exit 0.
-        if (m_input_files.empty() && m_config.opt_string("load_assemble_list").empty()) {
+        if (m_input_files.empty() && m_config.opt_string("load_assemble_list").empty() && m_config.opt_string("load_job").empty()) {
             boost::nowide::cerr << "--inspect-mesh needs an input file or --load-assemble-list" << std::endl;
             record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, cli_errors[CLI_INVALID_PARAMS], sliced_info);
             flush_and_exit(CLI_INVALID_PARAMS);
@@ -1479,7 +1481,7 @@ int CLI::run(int argc, char **argv)
             }
         }
         // Without input there is nothing to inspect; fail rather than print nothing and exit 0.
-        if (m_input_files.empty() && m_config.opt_string("load_assemble_list").empty()) {
+        if (m_input_files.empty() && m_config.opt_string("load_assemble_list").empty() && m_config.opt_string("load_job").empty()) {
             boost::nowide::cerr << "--inspect-paint needs an input file or --load-assemble-list" << std::endl;
             record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, cli_errors[CLI_INVALID_PARAMS], sliced_info);
             flush_and_exit(CLI_INVALID_PARAMS);
@@ -1503,6 +1505,23 @@ int CLI::run(int argc, char **argv)
                 }
             }
         }
+    }
+
+    // ORCA headless-cli: --list-options writes the option catalog and exits; it needs no input.
+    if (std::find(m_actions.begin(), m_actions.end(), "list_options") != m_actions.end()) {
+        const std::string target = m_config.opt_string("list_options");
+        const std::string text   = cli_option_catalog_json().dump(1);
+        if (target.empty() || target == "-") {
+            boost::nowide::cout << text << std::endl;
+        } else {
+            boost::nowide::ofstream out(target);
+            out << text << std::endl;
+            if (!out) {
+                boost::nowide::cerr << "--list-options: can't write " << target << std::endl;
+                return CLI_INVALID_PARAMS;
+            }
+        }
+        return CLI_SUCCESS;
     }
 
     bool start_gui = m_actions.empty() && !downward_check;
@@ -1759,8 +1778,8 @@ int CLI::run(int argc, char **argv)
     if (const std::string calib_mode = m_config.opt_string("calib"); !calib_mode.empty() || !m_config.opt_string("calib_params").empty()) {
         std::string err = calib_mode.empty() ? std::string("--calib-params needs --calib") :
                                                cli_calib_parse(calib_mode, m_config.opt_string("calib_params"), cli_calib);
-        if (err.empty() && (!m_input_files.empty() || !m_config.opt_string("load_assemble_list").empty()))
-            err = "--calib generates its own model: it cannot be combined with model files or --load-assemble-list";
+        if (err.empty() && (!m_input_files.empty() || !m_config.opt_string("load_assemble_list").empty() || !m_config.opt_string("load_job").empty()))
+            err = "--calib generates its own model: it cannot be combined with model files, --load-assemble-list or --load-job";
         if (err.empty())
             for (const std::string &t : m_transforms)
                 if (t != "arrange" && t != "orient" && t != "ensure_on_bed") {
@@ -1776,13 +1795,56 @@ int CLI::run(int argc, char **argv)
         }
     }
 
+    // ORCA headless-cli: a job file builds the project like an assemble list does (see Format/CliJob.hpp).
+    std::string load_job = m_config.opt_string("load_job");
+    if (!load_job.empty() && (!load_assemble_list.empty() || !m_input_files.empty() || !m_transforms.empty())) {
+        boost::nowide::cerr << "--load-job cannot be combined with model files, transforms (--arrange, --orient, --scale, ...) "
+                               "or --load-assemble-list: put objects, transforms and arrange in the job file" << std::endl;
+        record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, "--load-job cannot be combined with model files, transforms or --load-assemble-list", sliced_info);
+        flush_and_exit(CLI_INVALID_PARAMS);
+    }
     if (!load_assemble_list.empty() && ((m_input_files.size() > 0) || (m_transforms.size() > 0)))
     {
         BOOST_LOG_TRIVIAL(error) << boost::format("load_assemble_list should not be used with input model files to load and should not be sued with transforms");
         record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, cli_errors[CLI_INVALID_PARAMS], sliced_info);
         flush_and_exit(CLI_INVALID_PARAMS);
     }
-    if (load_assemble_list.empty()) {
+    if (!load_job.empty()) {
+        Model        model;
+        CliJobResult job;
+        if (!load_cli_job(load_job, model, job)) {
+            boost::nowide::cerr << "--load-job: " << job.error << std::endl;
+            record_exit_reson(outfile_dir, CLI_CONFIG_FILE_ERROR, 0, job.error, sliced_info);
+            flush_and_exit(CLI_CONFIG_FILE_ERROR);
+        }
+        if (int(job.plates.size()) > MAX_PLATE_COUNT) {
+            const std::string msg = "--load-job: too many plates (" + std::to_string(job.plates.size()) + ", at most " + std::to_string(MAX_PLATE_COUNT) + ")";
+            boost::nowide::cerr << msg << std::endl;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, msg, sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+        plate_data_src.resize(job.plates.size());
+        for (size_t index = 0; index < job.plates.size(); ++index) {
+            PlateData *plate_data   = new PlateData();
+            plate_data->plate_name  = job.plates[index].plate_name;
+            plate_data->plate_index = int(index);
+            ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Enable);
+            for (const auto &[key, value] : job.plates[index].plate_params)
+                plate_data->config.set_deserialize(key, value, ctx);
+            plate_data_src[index] = plate_data;
+        }
+        for (const auto &[id, orient] : job.orient)
+            orients_requirement[id] = orient;
+        for (const auto &obj : job.report) {
+            std::string line;
+            for (const auto &[k, v] : obj)
+                line += (line.empty() ? "" : ", ") + k + "=" + v;
+            BOOST_LOG_TRIVIAL(info) << "--load-job object: " << line;
+        }
+        assemble_plate_info_list = std::move(job.plates);
+        m_models.push_back(std::move(model));
+    }
+    else if (load_assemble_list.empty()) {
         for (const std::string& file : m_input_files) {
             if (!boost::filesystem::exists(file)) {
                 boost::nowide::cerr << "No such file: " << file << std::endl;
@@ -4255,6 +4317,19 @@ int CLI::run(int argc, char **argv)
     // Apply command line options to a more specific DynamicPrintConfig which provides normalize()
     // (command line options override --load files)
     m_print_config.apply(m_extra_config, true);
+
+    // ORCA headless-cli: the slicer reads layer_height from every height range (the GUI always
+    // stores it), so a range from a job file or assemble list without one gets the object's layer
+    // height. Without it layer_height_profile_from_ranges() dereferences a missing option.
+    if (const ConfigOptionFloat *lh = m_print_config.option<ConfigOptionFloat>("layer_height")) {
+        for (Model &model : m_models)
+            for (ModelObject *object : model.objects) {
+                const double object_lh = object->config.has("layer_height") ? object->config.opt_float("layer_height") : lh->value;
+                for (auto &[range, range_config] : object->layer_config_ranges)
+                    if (!range_config.has("layer_height"))
+                        range_config.set_key_value("layer_height", new ConfigOptionFloat(object_lh));
+            }
+    }
 
     if (!cli_override_before.empty()) {
         std::vector<std::string> &columns = m_print_config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;

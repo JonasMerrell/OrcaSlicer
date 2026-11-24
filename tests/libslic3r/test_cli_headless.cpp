@@ -173,7 +173,7 @@ TEST_CASE("Job file builds objects, parts, ranges and plates", "[HeadlessCLI]")
     CHECK(cube->config.opt_int("extruder") == 2);
     CHECK(cube->config.opt_int("wall_loops") == 4);
     REQUIRE(cube->layer_config_ranges.size() == 1);
-    CHECK(cube->layer_config_ranges.begin()->second.has("layer_height"));
+    CHECK(cube->layer_config_ranges.begin()->second.has("sparse_infill_density"));
     int modifiers = 0, negatives = 0, blockers = 0;
     for (const ModelVolume *v : cube->volumes) {
         modifiers += v->is_modifier();
