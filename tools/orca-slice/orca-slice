@@ -76,6 +76,11 @@ Toolhead clearance (fork, printer setting toolhead_clearance_enable=1, off by de
 the fork scans the finished G-code against the part printed so far and writes
 <name>.clearance.json next to it; the JSON output carries it as "clearance"
 (collisions, min_gap_mm, first colliding lines). Collisions also warn on stderr.
+The settings are printer settings, but --set works for them (it routes them to the printer preset):
+  orca-slice part.stl --set toolhead_clearance_enable=1 \
+      --set "toolhead_clearance_profile=1.5x0,12x1,47x1.13,1000x29.2"
+--check-gcode FILE checks existing G-code (non-planar, rCAD, hand-written) the same way
+without slicing; the toolhead shape comes from the printer preset or --set.
 
 Subcommands: options, inspect, calib, job, lanes, hub (orca-slice SUBCOMMAND --help).
 Environment: ORCA_DIR (fork package dir), MOONRAKER_URL, MOONRAKER_API_KEY,
@@ -919,6 +924,93 @@ def output_base(a, src):
     return final
 
 
+def prepare_presets(a, work, fils, catalog, notes):
+    """Flatten printer/process/filament presets into `work` and apply --set, each key to the preset
+    that owns it (see route_sets). Returns (paths, process dict, native CLI args for project keys)."""
+    try:
+        paths = flatten.flatten_set(a.printer, a.process, fils, a.support, work, a.bed_type, a.prime_tower)
+    except flatten.MissingParent as e:
+        fail(f"unknown preset {e} (see orca-slice --list)", 1)
+    for w in flatten.WARNINGS:
+        print(f"note: {w}", file=sys.stderr)
+    proc = json.load(open(paths["process"], encoding="utf-8"))
+    machine = json.load(open(paths["machine"], encoding="utf-8"))
+    filaments = [json.load(open(p, encoding="utf-8")) for p in paths["filaments"]]
+    sets = [parse_set(s) for s in a.set]
+    proc["brim_type"] = "no_brim"          # Jonas never wants brims
+    if str(proc.get("enable_prime_tower", "0")) == "1":
+        # inherited tower spot (x=15) is off this bed (printable x starts at 26)
+        proc["wipe_tower_x"], proc["wipe_tower_y"] = "250", "250"
+    native = route_sets(sets, catalog, machine, proc, filaments, notes)
+    set_keys = {k for k, _, _ in sets}
+    if "layer_height" in set_keys and "initial_layer_print_height" not in set_keys:
+        lh = flatten._first_num(proc.get("layer_height"))
+        if flatten._first_num(proc.get("initial_layer_print_height")) < lh:
+            proc["initial_layer_print_height"] = f"{lh:g}"
+    # flattened = self-contained; the fork CLI only resolves `inherits` for
+    # presets it loaded itself from <datadir>/user, so drop the link
+    for pth, d in [(paths["machine"], machine), (paths["process"], proc)] + list(zip(paths["filaments"], filaments)):
+        d.pop("inherits", None)
+        json.dump(d, open(pth, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+    return paths, proc, native
+
+
+def check_gcode(a):
+    """--check-gcode: run the fork's --check-toolhead-clearance on existing G-code."""
+    gcode = os.path.abspath(a.check_gcode)
+    if not os.path.isfile(gcode):
+        raise UsageError(f"no such file: {a.check_gcode}")
+    if not os.access(ORCA_BIN, os.X_OK):
+        fail(f"OrcaSlicer fork binary not found at {ORCA_BIN}", 1)
+    catalog = load_catalog()
+    notes = []
+    work = tempfile.mkdtemp(prefix="orca-slice-")
+    try:
+        outdir = os.path.join(work, "out")
+        datadir = os.path.join(work, "datadir")
+        os.makedirs(outdir)
+        os.makedirs(datadir)
+        paths, _, native = prepare_presets(a, work, a.filament or [DEFAULT_FILAMENT], catalog, notes)
+        for n in notes:
+            print(f"note: {n}", file=sys.stderr)
+        cmd = [ORCA_BIN, "--datadir", datadir, "--load-settings", paths["machine"] + ";" + paths["process"]] + native + \
+              ["--check-toolhead-clearance", gcode, "--outputdir", outdir]
+        r = subprocess.run(cmd, capture_output=True, text=True, env=orca_env(), timeout=a.timeout)
+        rep = None
+        for line in reversed(r.stdout.splitlines()):
+            if line.startswith("{"):
+                try:
+                    rep = json.loads(line)
+                    break
+                except ValueError:
+                    pass
+        if r.returncode != 0 or rep is None:
+            err = [l for l in r.stderr.splitlines() if "check-toolhead-clearance" in l or "Unknown option" in l
+                   or "Invalid option" in l]
+            print(f"orca-slice: clearance check FAILED (exit {r.returncode}): "
+                  + ("; ".join(err) if err else "the slicer build may predate --check-toolhead-clearance"), file=sys.stderr)
+            a.keep_tmp = True
+            return 1
+        dst = os.path.splitext(gcode)[0] + ".clearance.json"
+        with open(dst, "w") as fh:
+            json.dump(rep, fh, indent=1)
+        rep["report"] = dst
+        if rep.get("collisions"):
+            print(f"orca-slice: WARNING toolhead clearance: {rep['collisions']} colliding move(s), see {dst}",
+                  file=sys.stderr)
+        print(json.dumps({"gcode": gcode, "clearance": rep}, indent=1))
+        return 0
+    except subprocess.TimeoutExpired:
+        print(f"orca-slice: timed out after {a.timeout}s", file=sys.stderr)
+        a.keep_tmp = True
+        return 1
+    finally:
+        if a.keep_tmp:
+            print(f"work dir kept: {work}", file=sys.stderr)
+        else:
+            shutil.rmtree(work, ignore_errors=True)
+
+
 def run_slice(a, mode, model=None, job=None, calib=None):
     """mode: model | job | calib. Returns exit code; prints the JSON result."""
     if not os.access(ORCA_BIN, os.X_OK):
@@ -974,31 +1066,7 @@ def run_slice(a, mode, model=None, job=None, calib=None):
                 print("orca-slice: note: --as-is slices the 3MF's own settings; --set is ignored", file=sys.stderr)
             inputs = [model]
         else:
-            try:
-                paths = flatten.flatten_set(a.printer, a.process, fils, a.support, work, a.bed_type, a.prime_tower)
-            except flatten.MissingParent as e:
-                raise UsageError(f"unknown preset {e} (see orca-slice --list)")
-            for w in flatten.WARNINGS:
-                print(f"note: {w}", file=sys.stderr)
-            proc = json.load(open(paths["process"], encoding="utf-8"))
-            machine = json.load(open(paths["machine"], encoding="utf-8"))
-            filaments = [json.load(open(p, encoding="utf-8")) for p in paths["filaments"]]
-            sets = [parse_set(s) for s in a.set]
-            proc["brim_type"] = "no_brim"          # Jonas never wants brims
-            if str(proc.get("enable_prime_tower", "0")) == "1":
-                # inherited tower spot (x=15) is off this bed (printable x starts at 26)
-                proc["wipe_tower_x"], proc["wipe_tower_y"] = "250", "250"
-            native = route_sets(sets, catalog, machine, proc, filaments, notes)
-            set_keys = {k for k, _, _ in sets}
-            if "layer_height" in set_keys and "initial_layer_print_height" not in set_keys:
-                lh = flatten._first_num(proc.get("layer_height"))
-                if flatten._first_num(proc.get("initial_layer_print_height")) < lh:
-                    proc["initial_layer_print_height"] = f"{lh:g}"
-            # flattened = self-contained; the fork CLI only resolves `inherits` for
-            # presets it loaded itself from <datadir>/user, so drop the link
-            for pth, d in [(paths["machine"], machine), (paths["process"], proc)] + list(zip(paths["filaments"], filaments)):
-                d.pop("inherits", None)
-                json.dump(d, open(pth, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+            paths, proc, native = prepare_presets(a, work, fils, catalog, notes)
             cmd += ["--load-settings", paths["machine"] + ";" + paths["process"],
                     "--load-filaments", ";".join(paths["filaments"])] + native
             if mode == "model":
@@ -1111,23 +1179,27 @@ def run_slice(a, mode, model=None, job=None, calib=None):
                 entry["statistics"] = stem_dst + ".statistics.json"
             if not a.as_is and lane > 1:
                 n_re = retool(dst, lane - 1)
-                print(f"lane {lane}: retooled {n_re} line(s) T0 -> T{lane - 1} ({os.path.basename(dst)})",
-                      file=sys.stderr)
+                print(f"lane {lane}: retooled {n_re} line(s) T0 -> T{lane - 1}"
+                      + (f" ({os.path.basename(dst)})" if multi else ""), file=sys.stderr)
             entry["size_bytes"] = os.path.getsize(dst)
-            entry.update(stats(dst))
+            st = stats(dst)
+            entry.update(st)
+            entry["_stats"] = st
             plates.append(entry)
 
         out = {}
         if plates:
             first = plates[0]
             out = {"gcode": first["gcode"], "slice_seconds": round(dt, 1), "size_bytes": first["size_bytes"],
-                   **{k: first[k] for k in STAT_KEYS.values() if k in first}}
+                   **first["_stats"]}
             if a.html:
                 out["html"] = first.get("html")
             if "clearance" in first:
                 out["clearance"] = first["clearance"]
             if "statistics" in first:
                 out["statistics"] = first["statistics"]
+            for p in plates:
+                p.pop("_stats", None)
             if multi:
                 out["plates"] = plates
         else:
@@ -1234,17 +1306,22 @@ def main(argv=None):
             prog="orca-slice", description=__doc__.split("\n\n")[0],
             epilog=__doc__.split("\n", 2)[2], formatter_class=argparse.RawDescriptionHelpFormatter)
         add_slice_args(ap)
+        ap.add_argument("--check-gcode", metavar="GCODE",
+                        help="don't slice: check this G-code for toolhead collisions with the part it prints, using the "
+                             "printer's toolhead_clearance_profile/_mesh (or --set them); prints JSON with \"clearance\"")
         ap.add_argument("--list", action="store_true", help="list available preset names and exit")
         a = ap.parse_args(argv)
         if a.list:
             list_presets()
             return 0
+        if a.check_gcode:
+            return check_gcode(a)
         if a.job:
             if a.model:
                 raise UsageError("give either a model or --job")
             return run_job(a, a.job)
         if not a.model:
-            ap.error("model is required (or use --list)")
+            ap.error("model is required (or use --list or --check-gcode)")
         model = os.path.abspath(a.model)
         if not os.path.isfile(model):
             ap.error(f"no such file: {a.model}")

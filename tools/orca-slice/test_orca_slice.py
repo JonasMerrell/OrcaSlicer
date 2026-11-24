@@ -376,5 +376,65 @@ class EndToEnd(unittest.TestCase):
         self.assertIsNone(r["gcode"])
 
 
+def package_dir(binary, resources, root):
+    """A package-style ORCA_DIR (bin/orca-slicer + resources) around a build-tree binary."""
+    os.makedirs(os.path.join(root, "bin"), exist_ok=True)
+    sh = os.path.join(root, "bin", "orca-slicer")
+    with open(sh, "w") as fh:
+        fh.write(f'#!/bin/sh\nexec "{binary}" "$@"\n')
+    os.chmod(sh, 0o755)
+    if not os.path.exists(os.path.join(root, "resources")):
+        os.symlink(resources, os.path.join(root, "resources"))
+    return root
+
+
+CLEARANCE_BIN = os.environ.get("CLEARANCE_BIN", os.path.expanduser("~/OrcaSlicer-clearance/build/src/Release/orca-slicer"))
+
+
+@unittest.skipUnless(HAS_BIN, f"no slicer binary at {ORCA_BIN}")
+class CheckGcode(unittest.TestCase):
+    """--check-gcode (toolhead clearance on existing G-code, from the clearance thread)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp()
+        cube = os.path.join(cls.tmp, "cube.stl")
+        cube_stl(cube)
+        cls.gcode = json.loads(run([cube, "-o", cls.tmp + os.sep]).stdout)["gcode"]
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_parses(self):
+        r = run(["--check-gcode", os.path.join(self.tmp, "missing.gcode")], check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("no such file", r.stderr)
+        self.assertIn("--check-gcode", run(["--help"]).stdout)
+
+    def test_clear_error_without_flag(self):
+        if os_.binary_has("--check-toolhead-clearance"):
+            self.skipTest("this binary has --check-toolhead-clearance")
+        r = run(["--check-gcode", self.gcode], check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("clearance check FAILED", r.stderr)
+        self.assertIn("check-toolhead-clearance", r.stderr)
+        kept = [l.split(": ", 1)[1] for l in r.stderr.splitlines() if l.startswith("work dir kept: ")]
+        for k in kept:
+            shutil.rmtree(k, ignore_errors=True)
+
+    @unittest.skipUnless(os.access(CLEARANCE_BIN, os.X_OK), f"no clearance build at {CLEARANCE_BIN}")
+    def test_with_clearance_binary(self):
+        res = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(CLEARANCE_BIN)))), "resources")
+        pkg = package_dir(CLEARANCE_BIN, res, os.path.join(self.tmp, "clrpkg"))
+        r = run(["--check-gcode", self.gcode, "--set", "toolhead_clearance_enable=1",
+                 "--set", "toolhead_clearance_profile=1.5x0,12x1,47x1.13,1000x29.2"], env={"ORCA_DIR": pkg})
+        out = json.loads(r.stdout)
+        self.assertEqual(out["gcode"], self.gcode)
+        self.assertTrue(out["clearance"]["ran"])
+        self.assertEqual(out["clearance"]["report"], os.path.splitext(self.gcode)[0] + ".clearance.json")
+        self.assertTrue(os.path.isfile(out["clearance"]["report"]))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
