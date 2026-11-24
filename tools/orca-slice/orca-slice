@@ -1,0 +1,363 @@
+#!/usr/bin/env python3
+"""orca-slice: slice a model with Jonas's OrcaSlicer fork and his SimpleCore presets.
+
+Replaces orcaweb (the old :8080 phone slicer) for agents. Model in, G-code out.
+It never uploads to the printer or starts a print: send the G-code to Moonraker
+yourself, and only after Jonas says go.
+
+Examples:
+  orca-slice part.stl                                  # SimpleCore / Parts 0.2 / ABS Sunlu
+  orca-slice part.stl -P "SimpleCore Parts 0.25" -f "SimpleCore ASA" -o out/
+  orca-slice part.stl --support tree --set wall_loops=4 --set sparse_infill_density=30%
+  orca-slice part.stl --lane 3                          # Trad Rack lane 3: T0 -> T2
+  orca-slice painted.3mf --as-is                        # multi-colour 3MF exactly as saved
+  orca-slice part.stl --html                            # also write part.html, a toolpath preview
+  orca-slice --list                                     # list printer/process/filament names
+
+Presets are read from ~/.config/OrcaSlicer/user/default (the desktop fork's user
+presets) and resolved against the fork's system profiles, then flattened into
+self-contained JSON (same logic orcaweb used: missing parents fall back to the
+system generic, process<->printer compat is patched, bed temp forced non-zero).
+Brims are always forced off (brim_type=no_brim) unless you --set brim_type=...
+
+--html asks the fork CLI for --export-gcode-html and puts the page next to the
+G-code (same base name, .html): one self-contained file with a WebGL viewer
+(layer/move sliders, colour modes, feature legend) that opens offline in any
+browser. The JSON output then carries its path as "html".
+
+Toolhead clearance (fork, printer setting toolhead_clearance_enable=1, off by default):
+the fork scans the finished G-code against the part printed so far and writes
+<name>.clearance.json next to it; the JSON output carries it as "clearance"
+(collisions, min_gap_mm, first colliding lines). Collisions also warn on stderr.
+The settings are printer settings, but --set works for them (the fork merges them):
+  orca-slice part.stl --set toolhead_clearance_enable=1 \
+      --set "toolhead_clearance_profile=1.5x0,12x1,47x1.13,1000x29.2"
+--check-gcode FILE checks existing G-code (non-planar, rCAD, hand-written) the same way
+without slicing; the toolhead shape comes from the printer preset or --set.
+"""
+import argparse
+import glob
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+
+LIB = os.path.join(os.path.dirname(os.path.realpath(__file__)), "orca-slice-lib")
+sys.path.insert(0, LIB)
+import flatten  # noqa: E402
+
+ORCA_DIR = flatten.ORCA
+ORCA_BIN = os.path.join(ORCA_DIR, "bin", "orca-slicer")
+
+DEFAULT_PRINTER = "SimpleCore"
+DEFAULT_PROCESS = "SimpleCore Parts 0.2"
+DEFAULT_FILAMENT = "SimpleCore ABS Sunlu"
+
+STAT_KEYS = {
+    "estimated printing time (normal mode)": "time",
+    "total filament used [g]": "filament_g",
+    "total layer number": "layers",
+    "max_z_height": "height_mm",
+}
+
+
+def list_presets():
+    out = {"machine": [], "process": [], "filament": []}
+    for sub, kind in (("machine", "machine"), ("printer", "machine"),
+                      ("process", "process"), ("filament", "filament")):
+        for p in glob.glob(os.path.join(flatten.BUNDLE, sub, "*.json")):
+            try:
+                n = json.load(open(p, encoding="utf-8")).get("name")
+            except Exception:
+                continue
+            if n:
+                out[kind].append(n)
+    for k in out:
+        print(f"{k}:")
+        for n in sorted(set(out[k]), key=str.lower):
+            print(f"  {n}")
+
+
+def retool(path, tool):
+    """T0 / TOOL=0 -> T<tool> on executable lines (single-colour Trad Rack lane)."""
+    n, lines = 0, []
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if not line.lstrip().startswith(";"):
+                new = re.sub(r"\bTOOL=0\b", f"TOOL={tool}", line)
+                new = re.sub(r"^(\s*)T0\b", rf"\g<1>T{tool}", new)
+                n += new != line
+                line = new
+            lines.append(line)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.writelines(lines)
+    return n
+
+
+def stats(path):
+    got = {}
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if not line.startswith(";"):
+                continue
+            for needle, key in STAT_KEYS.items():
+                if key not in got:
+                    m = re.match(r"\s*;\s*" + re.escape(needle) + r"\s*[:=]\s*(.+)", line)
+                    if m:
+                        got[key] = m.group(1).strip()
+    return got
+
+
+def orca_env():
+    env = dict(os.environ, LC_ALL="C", LIBGL_ALWAYS_SOFTWARE="1",
+               GALLIUM_DRIVER="llvmpipe", MESA_GL_VERSION_OVERRIDE="3.3")
+    return env
+
+
+def prepare_presets(a, ap, work):
+    """Flatten printer/process/filament presets into `work`, apply --set (printer keys too:
+    the fork CLI merges them from the process file). Returns (paths, process dict)."""
+    fils = a.filament or [DEFAULT_FILAMENT]
+    try:
+        paths = flatten.flatten_set(a.printer, a.process, fils, a.support, work,
+                                    a.bed_type, a.prime_tower)
+    except flatten.MissingParent as e:
+        sys.exit(f"orca-slice: unknown preset {e} (see orca-slice --list)")
+    for w in flatten.WARNINGS:
+        print(f"note: {w}", file=sys.stderr)
+    proc = json.load(open(paths["process"], encoding="utf-8"))
+    sets = dict(s.split("=", 1) for s in a.set if "=" in s)
+    bad = [s for s in a.set if "=" not in s]
+    if bad:
+        ap.error(f"--set needs KEY=VALUE, got {bad}")
+    proc["brim_type"] = "no_brim"          # Jonas never wants brims
+    if str(proc.get("enable_prime_tower", "0")) == "1":
+        # inherited tower spot (x=15) is off this bed (printable x starts at 26)
+        proc["wipe_tower_x"], proc["wipe_tower_y"] = "250", "250"
+    proc.update(sets)
+    if "layer_height" in sets and "initial_layer_print_height" not in sets:
+        lh = flatten._first_num(proc.get("layer_height"))
+        if flatten._first_num(proc.get("initial_layer_print_height")) < lh:
+            proc["initial_layer_print_height"] = f"{lh:g}"
+    json.dump(proc, open(paths["process"], "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+    # flattened = self-contained; the fork CLI only resolves `inherits` for
+    # presets it loaded itself from <datadir>/user, so drop the link
+    for pth in [paths["machine"], paths["process"]] + paths["filaments"]:
+        d = json.load(open(pth, encoding="utf-8"))
+        if d.pop("inherits", None) is not None:
+            json.dump(d, open(pth, "w", encoding="utf-8"), indent=1, ensure_ascii=False)
+    return paths, proc
+
+
+def check_gcode(a, ap):
+    """--check-gcode: run the fork's --check-toolhead-clearance on existing G-code."""
+    gcode = os.path.abspath(a.check_gcode)
+    if not os.path.isfile(gcode):
+        ap.error(f"no such file: {a.check_gcode}")
+    if not os.access(ORCA_BIN, os.X_OK):
+        sys.exit(f"orca-slice: OrcaSlicer fork binary not found at {ORCA_BIN}")
+    work = tempfile.mkdtemp(prefix="orca-slice-")
+    try:
+        outdir = os.path.join(work, "out")
+        datadir = os.path.join(work, "datadir")
+        os.makedirs(outdir)
+        os.makedirs(datadir)
+        paths, _ = prepare_presets(a, ap, work)
+        cmd = [ORCA_BIN, "--datadir", datadir, "--load-settings", paths["machine"] + ";" + paths["process"],
+               "--check-toolhead-clearance", gcode, "--outputdir", outdir]
+        r = subprocess.run(cmd, capture_output=True, text=True, env=orca_env(), timeout=a.timeout)
+        rep = None
+        for line in reversed(r.stdout.splitlines()):
+            if line.startswith("{"):
+                try:
+                    rep = json.loads(line)
+                    break
+                except ValueError:
+                    pass
+        if r.returncode != 0 or rep is None:
+            err = [l for l in r.stderr.splitlines() if "check-toolhead-clearance" in l or "Unknown option" in l]
+            print(f"orca-slice: clearance check FAILED (exit {r.returncode}): "
+                  + ("; ".join(err) if err else "the slicer build may predate --check-toolhead-clearance"), file=sys.stderr)
+            a.keep_tmp = True
+            return 1
+        dst = os.path.splitext(gcode)[0] + ".clearance.json"
+        with open(dst, "w") as fh:
+            json.dump(rep, fh, indent=1)
+        rep["report"] = dst
+        if rep.get("collisions"):
+            print(f"orca-slice: WARNING toolhead clearance: {rep['collisions']} colliding move(s), see {dst}",
+                  file=sys.stderr)
+        print(json.dumps({"gcode": gcode, "clearance": rep}, indent=1))
+        return 0
+    except subprocess.TimeoutExpired:
+        print(f"orca-slice: timed out after {a.timeout}s", file=sys.stderr)
+        a.keep_tmp = True
+        return 1
+    finally:
+        if a.keep_tmp:
+            print(f"work dir kept: {work}", file=sys.stderr)
+        else:
+            shutil.rmtree(work, ignore_errors=True)
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="orca-slice", description=__doc__.split("\n\n")[0],
+        epilog=__doc__.split("\n", 2)[2], formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("model", nargs="?", help="STL / 3MF / STEP / OBJ to slice")
+    ap.add_argument("-p", "--printer", default=DEFAULT_PRINTER, help=f"printer preset (default {DEFAULT_PRINTER!r})")
+    ap.add_argument("-P", "--process", default=DEFAULT_PROCESS, help=f"process preset (default {DEFAULT_PROCESS!r})")
+    ap.add_argument("-f", "--filament", action="append",
+                    help=f"filament preset, repeat for multi-material (default {DEFAULT_FILAMENT!r})")
+    ap.add_argument("--lane", type=int, default=1,
+                    help="Trad Rack lane 1-9 for a single-colour print: rewrites T0 -> T<lane-1>")
+    ap.add_argument("--support", choices=list(flatten.SUPPORT_PRESETS),
+                    help="override supports (default: whatever the process preset says)")
+    ap.add_argument("--bed-type", default=flatten.DEFAULT_BED_TYPE, choices=list(flatten.BED_TYPES))
+    ap.add_argument("--prime-tower", action="store_true")
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="override any process key, e.g. --set layer_height=0.25 (repeatable)")
+    ap.add_argument("--no-arrange", action="store_true",
+                    help="keep the model's own XY position instead of auto-arranging it onto the plate")
+    ap.add_argument("--as-is", action="store_true",
+                    help="slice a 3MF with its own embedded printer/process/filament settings (multi-colour)")
+    ap.add_argument("-o", "--output", help="output .gcode file or directory (default: next to the model)")
+    ap.add_argument("--html", action="store_true",
+                    help="also write a self-contained HTML toolpath preview next to the G-code "
+                         "(same name, .html); its path is the \"html\" key of the JSON output")
+    ap.add_argument("--check-gcode", metavar="GCODE",
+                    help="don't slice: check this G-code for toolhead collisions with the part it prints, using the "
+                         "printer's toolhead_clearance_profile/_mesh (or --set them); prints JSON with \"clearance\"")
+    ap.add_argument("--keep-tmp", action="store_true", help="keep the flattened presets + Orca log")
+    ap.add_argument("--timeout", type=int, default=900, help="slice timeout in seconds (default 900)")
+    ap.add_argument("--list", action="store_true", help="list available preset names and exit")
+    a = ap.parse_args()
+
+    if a.list:
+        list_presets()
+        return 0
+    if a.check_gcode:
+        return check_gcode(a, ap)
+    if not a.model:
+        ap.error("model is required (or use --list or --check-gcode)")
+    model = os.path.abspath(a.model)
+    if not os.path.isfile(model):
+        ap.error(f"no such file: {a.model}")
+    if not os.access(ORCA_BIN, os.X_OK):
+        sys.exit(f"orca-slice: OrcaSlicer fork binary not found at {ORCA_BIN}")
+
+    base = os.path.splitext(os.path.basename(model))[0]
+    if a.output and (a.output.endswith(os.sep) or os.path.isdir(a.output)):
+        final = os.path.join(os.path.abspath(a.output), base + ".gcode")
+    elif a.output:
+        final = os.path.abspath(a.output)
+    else:
+        final = os.path.join(os.path.dirname(model), base + ".gcode")
+    os.makedirs(os.path.dirname(final), exist_ok=True)
+
+    work = tempfile.mkdtemp(prefix="orca-slice-")
+    outdir = os.path.join(work, "out")
+    datadir = os.path.join(work, "datadir")   # keep the CLI off the desktop config
+    os.makedirs(outdir)
+    os.makedirs(datadir)
+    # the fork's CLI resolves `inherits` through a PresetBundle loaded from
+    # <datadir>/system, which the GUI normally fills on first start
+    os.symlink(os.path.join(ORCA_DIR, "resources", "profiles"), os.path.join(datadir, "system"))
+    # ...and only loads the vendors enabled in <datadir>/OrcaSlicer.conf: copy the
+    # desktop's enabled models (just those, no tokens), Voron 0.1 if there are none
+    models = [{"vendor": "Voron", "model": "Voron 0.1", "nozzle_diameter": "0.4"}]
+    try:
+        models = json.load(open(os.path.expanduser("~/.config/OrcaSlicer/OrcaSlicer.conf"))).get("models") or models
+    except Exception:
+        pass
+    json.dump({"firstguide": {"finish": True}, "models": models},
+              open(os.path.join(datadir, "OrcaSlicer.conf"), "w"))
+    cmd = [ORCA_BIN, "--datadir", datadir]
+    if a.html:
+        cmd.append("--export-gcode-html")   # plate_N.html next to plate_N.gcode in outdir
+    try:
+        if a.as_is:
+            if not model.lower().endswith(".3mf"):
+                ap.error("--as-is needs a .3mf")
+            cmd += ["--slice", "0", "--outputdir", outdir, model]
+        else:
+            paths, proc = prepare_presets(a, ap, work)
+            cmd += ["--load-settings", paths["machine"] + ";" + paths["process"],
+                    "--load-filaments", ";".join(paths["filaments"]),
+                    "--arrange", "0" if a.no_arrange else "1", "--orient", "0",
+                    "--slice", "0", "--outputdir", outdir, model]
+
+        t0 = time.time()
+        log = os.path.join(work, "orca.log")
+        with open(log, "w") as lf:
+            rc = subprocess.run(cmd, stdout=lf, stderr=subprocess.STDOUT, env=orca_env(),
+                                timeout=a.timeout).returncode
+        dt = time.time() - t0
+        res = {}
+        rj = os.path.join(outdir, "result.json")
+        if os.path.exists(rj):
+            try:
+                res = json.load(open(rj))
+            except Exception:
+                pass
+        gcodes = sorted(glob.glob(os.path.join(outdir, "*.gcode")))
+        if rc != 0 or res.get("return_code") not in (0, None) or not gcodes:
+            tail = open(log, errors="replace").read().splitlines()[-15:]
+            print(f"orca-slice: slice FAILED (exit {rc}, {res.get('error_string', '')})", file=sys.stderr)
+            print("\n".join(tail), file=sys.stderr)
+            if not a.as_is and str(proc.get("draft_shield", "disabled")) == "enabled" \
+                    and "inside the print volume" in res.get("error_string", ""):
+                print("hint: this process has draft_shield=enabled, which the fork's CLI rejects "
+                      "this way (2.3.2 sliced it); retry with --set draft_shield=disabled", file=sys.stderr)
+            a.keep_tmp = True
+            return 1
+        html_src = os.path.splitext(gcodes[0])[0] + ".html"
+        # fork toolhead clearance check (toolhead_clearance_enable): plate_N.clearance.json
+        clearance = None
+        clr_src = os.path.splitext(gcodes[0])[0] + ".clearance.json"
+        if os.path.isfile(clr_src):
+            try:
+                clearance = json.load(open(clr_src))
+                clr_dst = os.path.splitext(final)[0] + ".clearance.json"
+                shutil.move(clr_src, clr_dst)
+                clearance["report"] = clr_dst
+            except Exception as e:
+                clearance = {"ran": False, "error": f"unreadable clearance report: {e}"}
+            if clearance.get("collisions"):
+                print(f"orca-slice: WARNING toolhead clearance: {clearance['collisions']} colliding move(s), "
+                      f"see {clearance.get('report')}", file=sys.stderr)
+        shutil.move(gcodes[0], final)
+        html = None
+        if a.html:
+            if os.path.isfile(html_src):
+                html = os.path.splitext(final)[0] + ".html"
+                shutil.move(html_src, html)
+            else:
+                print("orca-slice: the slicer wrote no HTML preview (see --keep-tmp orca.log)",
+                      file=sys.stderr)
+        if not a.as_is and a.lane > 1:
+            n = retool(final, a.lane - 1)
+            print(f"lane {a.lane}: retooled {n} line(s) T0 -> T{a.lane - 1}", file=sys.stderr)
+        s = stats(final)
+        print(json.dumps({"gcode": final, "slice_seconds": round(dt, 1),
+                          "size_bytes": os.path.getsize(final), **s,
+                          **({"html": html} if a.html else {}),
+                          **({"clearance": clearance} if clearance is not None else {})}, indent=1))
+        return 0
+    except subprocess.TimeoutExpired:
+        print(f"orca-slice: timed out after {a.timeout}s", file=sys.stderr)
+        a.keep_tmp = True
+        return 1
+    finally:
+        if a.keep_tmp:
+            print(f"work dir kept: {work}", file=sys.stderr)
+        else:
+            shutil.rmtree(work, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
