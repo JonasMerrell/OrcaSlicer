@@ -13,6 +13,7 @@
 #include "libslic3r/GCodeReader.hpp"
 #include "libslic3r/ClipperUtils.hpp"
 #include "libslic3r/AABBTreeLines.hpp"
+#include "libslic3r/Clearance/ToolheadClearance.hpp"
 
 #include "test_helpers.hpp"
 
@@ -971,4 +972,51 @@ TEST_CASE("Z contoured G-code stays in its layer and scales flow with the local 
     size_t within = std::count_if(top_k.begin(), top_k.end(), [median](double k) { return std::abs(k / median - 1.) < 0.05; });
     // Almost every top surface move puts down filament in proportion to the thickness under it.
     CHECK(double(within) / double(top_k.size()) > 0.9);
+}
+
+// Orca: Z contouring against the toolhead clearance check (toolhead_clearance_*).
+static const char *zaa_test_toolhead_profile = "0.5x0,4x1.6,13x1.13,45x1.13,1000x30";
+
+TEST_CASE("Z contouring is clamped to the toolhead clearance", "[PrintObject][ZAA]")
+{
+    Clearance::ToolheadShape shape = Clearance::ToolheadShape::from_profile({ { 0.5, 0. }, { 4., 1.6 }, { 13., 1.13 }, { 45., 1.13 }, { 1000., 30. } });
+    Clearance::ClearanceChecker chk(shape, BoundingBoxf(Vec2d(0, 0), Vec2d(200, 200)));
+    // A 10 mm tall tower at x 100..110, y 100..110.
+    const coord_t c0 = scaled(100.), c1 = scaled(110.);
+    chk.printed().add_layer({ ExPolygon(Polygon({ { c0, c0 }, { c1, c0 }, { c1, c1 }, { c0, c1 } })) }, 10.);
+    const double safe = chk.min_nozzle_z(80, 105);
+    REQUIRE(safe > 9.);
+    REQUIRE(safe < 9.2);
+
+    // 20 mm from the tower at layer 9.2: a 0.2 mm dip would put the probe into it, so it is raised to the safe Z.
+    CHECK(zaa_clamp_to_clearance(-0.2, 80, 105, 9.2, &chk) == Catch::Approx(safe - 9.2).margin(1e-6));
+    // A shallow dip above the safe Z, a lift, no checker, or nothing nearby: unchanged.
+    CHECK(zaa_clamp_to_clearance(-0.05, 80, 105, 9.2, &chk) == Catch::Approx(-0.05));
+    CHECK(zaa_clamp_to_clearance(0.04, 80, 105, 9.2, &chk) == Catch::Approx(0.04));
+    CHECK(zaa_clamp_to_clearance(-0.2, 80, 105, 9.2, nullptr) == Catch::Approx(-0.2));
+    CHECK(zaa_clamp_to_clearance(-0.2, 150, 30, 9.2, &chk) == Catch::Approx(-0.2));
+    // Never lifted above the layer, even where the planar layer itself would not clear.
+    CHECK(zaa_clamp_to_clearance(-0.2, 80, 105, 8.0, &chk) == Catch::Approx(0.));
+}
+
+TEST_CASE("Z contouring within one layer never meets the toolhead on a single part", "[PrintObject][ZAA]")
+{
+    // A dip of at most one layer stays below anything earlier layers printed, so with the SimpleCore
+    // toolhead the clearance check must leave every contoured point where it was.
+    Print plain;
+    Model plain_model;
+    slice_tilted_box(5., {}, plain, plain_model);
+    Print checked;
+    Model checked_model;
+    slice_tilted_box(5., { { "toolhead_clearance_enable", "1" }, { "toolhead_clearance_profile", zaa_test_toolhead_profile } }, checked, checked_model);
+
+    const auto a = contoured_heights(*plain.objects().front());
+    const auto b = contoured_heights(*checked.objects().front());
+    REQUIRE(a.size() == b.size());
+    size_t points = 0;
+    for (size_t i = 0; i < a.size(); ++i) {
+        CHECK(a[i] == b[i]);
+        points += a[i].size();
+    }
+    CHECK(points > 100);
 }

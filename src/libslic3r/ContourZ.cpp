@@ -6,6 +6,7 @@
 #include "Point.hpp"
 #include "Print.hpp"
 #include "SLA/IndexedMesh.hpp"
+#include "Clearance/ToolheadClearance.hpp"
 #include "libslic3r.h"
 #include <Eigen/Core>
 #include <cfloat>
@@ -21,7 +22,8 @@
 
 namespace Slic3r {
 
-static void contour_extrusion_entity(LayerRegion *region, const sla::IndexedMesh &mesh, ExtrusionEntity *extr);
+using Clearance::ClearanceChecker;
+static void contour_extrusion_entity(LayerRegion *region, const sla::IndexedMesh &mesh, const ClearanceChecker *clearance, ExtrusionEntity *extr);
 
 static double follow_slope_down(double angle_rad, double dist)
 {
@@ -53,17 +55,25 @@ bool zaa_contours_role(const PrintRegionConfig &config, ExtrusionRole role)
 // Orca: how far contouring may move the nozzle from the layer's nominal Z, up or down. Never more than
 // one layer height: the toolhead (a Beacon probe ~1.1 mm above the nozzle tip on SimpleCore) then keeps
 // the clearance it has when printing planar. zaa_max_dz tightens it further; 0 leaves the layer height.
-// TODO: once Slic3r::Clearance (branch claude/nonplanar-clearance) is implemented, also clamp each point
-// to ClearanceChecker::check_path()'s min_z. Build the checker serially in PrintObject::contour_z() before
-// the parallel loop (it is read-only afterwards), from lslices (PrintedVolume::add_layers_below, or the
-// planned per-band add_layers_between), not from contoured paths.
+// Each point is also kept clear of already printed material by the toolhead clearance check
+// (zaa_clamp_to_clearance()) when the printer has toolhead_clearance_enable.
 double zaa_max_dz(const PrintRegionConfig &config, double layer_height)
 {
     const double limit = config.zaa_max_dz.value;
     return limit > 0. ? std::min(limit, layer_height) : layer_height;
 }
 
-static bool contour_extrusion_path(LayerRegion *region, const sla::IndexedMesh &mesh, ExtrusionPath &path)
+double zaa_clamp_to_clearance(double d, double x, double y, double print_z, const ClearanceChecker *clearance)
+{
+    if (clearance == nullptr || d >= 0.)
+        return d;
+    // Lowest nozzle Z that keeps the toolhead off the printed part, resolved only above the planned Z.
+    const double planned = print_z + d;
+    const double safe    = clearance->required_z(x, y, planned);
+    return safe > planned ? std::min(0., safe - print_z) : d;
+}
+
+static bool contour_extrusion_path(LayerRegion *region, const sla::IndexedMesh &mesh, const ClearanceChecker *clearance, ExtrusionPath &path)
 {
     if (path.role() != erTopSolidInfill && path.role() != erIroning && path.role() != erExternalPerimeter && path.role() != erPerimeter) {
 		return false;
@@ -157,6 +167,8 @@ static bool contour_extrusion_path(LayerRegion *region, const sla::IndexedMesh &
                 d = 0;
             // Orca: hard cap on the Z travel, at most one layer height (see zaa_max_dz()).
             d = std::clamp(d, -max_dz, max_dz);
+            // Orca: and never into the toolhead's clearance of material already printed.
+            d = zaa_clamp_to_clearance(d, x, y, layer->print_z, clearance);
 
             if (is_perimeter(path.role()) && d > 0) {
                 // do not increase height of perimeters as this may create an appearance of a seam
@@ -203,28 +215,28 @@ static bool contour_extrusion_path(LayerRegion *region, const sla::IndexedMesh &
 	return true;
 }
 
-static void contour_extrusion_multipath(LayerRegion *region, const sla::IndexedMesh &mesh, ExtrusionMultiPath &multipath) 
+static void contour_extrusion_multipath(LayerRegion *region, const sla::IndexedMesh &mesh, const ClearanceChecker *clearance, ExtrusionMultiPath &multipath) 
 {
 	for (ExtrusionPath &path : multipath.paths) {
-		contour_extrusion_path(region, mesh, path);
+		contour_extrusion_path(region, mesh, clearance, path);
 	}
 }
 
-static void contour_extrusion_loop(LayerRegion *region, const sla::IndexedMesh &mesh, ExtrusionLoop &loop) 
+static void contour_extrusion_loop(LayerRegion *region, const sla::IndexedMesh &mesh, const ClearanceChecker *clearance, ExtrusionLoop &loop) 
 {
 	for (ExtrusionPath &path : loop.paths) {
-		contour_extrusion_path(region, mesh, path);
+		contour_extrusion_path(region, mesh, clearance, path);
 	}
 }
 
-static void contour_extrusion_entitiy_collection(LayerRegion *region, const sla::IndexedMesh &mesh, ExtrusionEntityCollection &collection)
+static void contour_extrusion_entitiy_collection(LayerRegion *region, const sla::IndexedMesh &mesh, const ClearanceChecker *clearance, ExtrusionEntityCollection &collection)
 {
 	for (ExtrusionEntity *entity : collection.entities) {
-		contour_extrusion_entity(region, mesh, entity);
+		contour_extrusion_entity(region, mesh, clearance, entity);
 	}
 }
 
-static void contour_extrusion_entity(LayerRegion *region, const sla::IndexedMesh &mesh, ExtrusionEntity *extr)
+static void contour_extrusion_entity(LayerRegion *region, const sla::IndexedMesh &mesh, const ClearanceChecker *clearance, ExtrusionEntity *extr)
 {
 	const ExtrusionPathSloped *sloped = dynamic_cast<const ExtrusionPathSloped*>(extr);
 	if (sloped != nullptr) {
@@ -234,19 +246,19 @@ static void contour_extrusion_entity(LayerRegion *region, const sla::IndexedMesh
 
 	ExtrusionMultiPath *multipath = dynamic_cast<ExtrusionMultiPath*>(extr);
 	if (multipath != nullptr) {
-		contour_extrusion_multipath(region, mesh, *multipath);
+		contour_extrusion_multipath(region, mesh, clearance, *multipath);
 		return;
 	}
 
 	ExtrusionPath *path = dynamic_cast<ExtrusionPath*>(extr);
 	if (path != nullptr) {
-		contour_extrusion_path(region, mesh, *path);
+		contour_extrusion_path(region, mesh, clearance, *path);
 		return;
 	}
 
 	ExtrusionLoop *loop = dynamic_cast<ExtrusionLoop*>(extr);
 	if (loop != nullptr) {
-		contour_extrusion_loop(region, mesh, *loop);
+		contour_extrusion_loop(region, mesh, clearance, *loop);
 		return;
 	}
 
@@ -258,7 +270,7 @@ static void contour_extrusion_entity(LayerRegion *region, const sla::IndexedMesh
 
 	ExtrusionEntityCollection *collection = dynamic_cast<ExtrusionEntityCollection*>(extr);
 	if (collection != nullptr) {
-		contour_extrusion_entitiy_collection(region, mesh, *collection);
+		contour_extrusion_entitiy_collection(region, mesh, clearance, *collection);
 		return;
 	}
 
@@ -266,24 +278,24 @@ static void contour_extrusion_entity(LayerRegion *region, const sla::IndexedMesh
 	return;
 }
 
-static void handle_extrusion_collection(LayerRegion *region, const sla::IndexedMesh &mesh, ExtrusionEntityCollection &collection, std::initializer_list<ExtrusionRole> roles) {
+static void handle_extrusion_collection(LayerRegion *region, const sla::IndexedMesh &mesh, const ClearanceChecker *clearance, ExtrusionEntityCollection &collection, std::initializer_list<ExtrusionRole> roles) {
     for (ExtrusionEntity* extr : collection.entities) {
         if (!contains(roles, extr->role())) {
 			continue;
 		}
 
-		contour_extrusion_entity(region, mesh, extr);
+		contour_extrusion_entity(region, mesh, clearance, extr);
     }
 }
 
-void Layer::make_contour_z(const sla::IndexedMesh &mesh)
+void Layer::make_contour_z(const sla::IndexedMesh &mesh, const ClearanceChecker *clearance)
 {
 	for (LayerRegion *region : this->regions()) {
         if (!region->region().config().zaa_enabled)
             continue;
 
-        handle_extrusion_collection(region, mesh, region->fills, {erTopSolidInfill, erIroning, erPerimeter, erExternalPerimeter, erMixed});
-        handle_extrusion_collection(region, mesh, region->perimeters, {erPerimeter, erExternalPerimeter, erMixed});
+        handle_extrusion_collection(region, mesh, clearance, region->fills, {erTopSolidInfill, erIroning, erPerimeter, erExternalPerimeter, erMixed});
+        handle_extrusion_collection(region, mesh, clearance, region->perimeters, {erPerimeter, erExternalPerimeter, erMixed});
     }
 }
 } // namespace Slic3r

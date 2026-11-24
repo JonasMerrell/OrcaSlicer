@@ -135,11 +135,15 @@ private:
 };
 
 class PrintRegionConfig;
+namespace Clearance { class ClearanceChecker; }
 // Orca: Z contouring limits (ContourZ.cpp), exposed for the tests.
 // Whether the region's zaa_top_surfaces / zaa_outer_walls / zaa_inner_walls let contouring move a path of this role.
 bool   zaa_contours_role(const PrintRegionConfig &config, ExtrusionRole role);
 // The farthest contouring may move the nozzle from the layer's nominal Z: zaa_max_dz, never more than one layer.
 double zaa_max_dz(const PrintRegionConfig &config, double layer_height);
+// Raise a contouring offset d (mm, relative to print_z) at object point (x, y) so the toolhead clears what
+// `clearance` holds. Never lifts above the layer's nominal Z. No checker = d unchanged.
+double zaa_clamp_to_clearance(double d, double x, double y, double print_z, const Clearance::ClearanceChecker *clearance);
 
 class Layer
 {
@@ -250,7 +254,8 @@ public:
     static int              choose_ironing_extruder(const PrintRegionConfig &cfg,
                                                     bool spiral_mode,
                                                     bool is_topmost_layer);
-    void                    make_contour_z(const sla::IndexedMesh &mesh);
+    // clearance: optional toolhead clearance check of what is printed before this layer (object frame).
+    void                    make_contour_z(const sla::IndexedMesh &mesh, const Clearance::ClearanceChecker *clearance = nullptr);
 
     void                    export_region_slices_to_svg(const char *path) const;
     void                    export_region_fill_surfaces_to_svg(const char *path) const;
