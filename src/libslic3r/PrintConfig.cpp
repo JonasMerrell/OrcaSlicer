@@ -13453,6 +13453,16 @@ CLIActionsConfigDef::CLIActionsConfigDef()
     def->tooltip = L("This outputs the model\u2019s information.");
     def->set_default_value(new ConfigOptionBool(false));
 
+    // Fork: check finished G-code for toolhead collisions with the part it prints (non-planar).
+    def = this->add("check_toolhead_clearance", coString);
+    def->label = L("Check toolhead clearance of G-code");
+    def->tooltip = L("Replay a G-code file, build the printed part from its extrusions and report every move where the toolhead "
+                     "(toolhead_clearance_profile / toolhead_clearance_mesh from --load-settings) hits what was printed before it. "
+                     "Prints a JSON report to stdout (and <name>.clearance.json in --outputdir), then exits. "
+                     "Runs whether or not toolhead_clearance_enable is set.");
+    def->cli_params = "file.gcode";
+    def->set_default_value(new ConfigOptionString());
+
     def = this->add("inspect_mesh", coBool);
     def->label = L("Inspect mesh (JSON to stdout)");
     def->tooltip = L("Print a JSON summary of each loaded object to stdout, then exit: its bounding boxes and the "
@@ -13472,6 +13482,16 @@ CLIActionsConfigDef::CLIActionsConfigDef()
                      "and mesh-local bounding box \u2014 then exit. Machine-readable "
                      "alternative to opening the paint gizmos in the GUI.");
     def->set_default_value(new ConfigOptionBool(false));
+
+    // Fork (headless CLI): machine-readable option catalog, see CliOptionCatalog.hpp.
+    def = this->add("list_options", coString);
+    def->label = L("List options (JSON)");
+    def->tooltip = L("Write a JSON catalog of every setting and every command line option, then exit: type, default, "
+                     "allowed values, limits, label, tooltip, and where each setting can be set (process, filament or "
+                     "printer preset, project, per object, per part or modifier, per height range, per plate). "
+                     "Use - to write it to stdout.");
+    def->cli_params = "options.json";
+    def->set_default_value(new ConfigOptionString("-"));
 
     def = this->add("export_settings", coString);
     def->label = L("Export Settings");
@@ -13714,6 +13734,43 @@ CLIMiscConfigDef::CLIMiscConfigDef()
     def->label = L("Load assemble list");
     def->tooltip = L("Load assemble object list from config file.");
     def->cli_params = "assemble_list.json";
+    def->set_default_value(new ConfigOptionString());
+
+    // ORCA headless-cli: calibration
+    def = this->add("calib", coString);
+    def->label = L("Calibration test");
+    def->tooltip = L("Generate a calibration test from the Calibration menu instead of loading model files, and slice it: "
+                     "pa_line, pa_pattern, pa_tower, flow_rate, flow_rate_yolo, temp_tower, vol_speed, vfa, retraction, "
+                     "input_shaping_freq, input_shaping_damp or cornering. The test model and its settings are the desktop app's. "
+                     "Settings given on the command line are kept, and object brims are left out when brim_type is no_brim. "
+                     "Use --calib-params for the test's range. result.json lists what was generated under \"calibration\".");
+    def->cli_params = "mode";
+    def->set_default_value(new ConfigOptionString());
+
+    def = this->add("calib_params", coString);
+    def->label = L("Calibration parameters");
+    def->tooltip = L("Comma-separated key=value parameters of --calib; lists use ':'. Defaults are the calibration dialog's. "
+                     "pa_line/pa_pattern/pa_tower: start=0,end=0.1,step=0.002 (pa_pattern end=0.08,step=0.005; bowden=1 for "
+                     "end=1.0 with step 0.02, or 0.05 for the pattern), print_numbers=1 (0 for the tower), pa_pattern also "
+                     "speeds=100:200 and accels=3000:6000. flow_rate: pass=1|2, pattern=archimedean|monotonic; flow_rate_yolo: "
+                     "pass=1 (recommended) or 2 (perfectionist). temp_tower: start=230,end=190,resize=1. vol_speed: start=5,end=20,"
+                     "step=0.5 (mm3/s). vfa: start=40,end=200,step=10,resize=1,layer_height=auto. retraction: start=0,end=2,step=0.1. "
+                     "input_shaping_freq: freq_x=15:110,freq_y=15:110,damp=0.15,shaper=<flavor default>,model=0 (ringing tower) or 1 "
+                     "(fast tower). input_shaping_damp: freq_x=30,freq_y=30,start=0,end=0.4,shaper,model. cornering: start=1,end=15 "
+                     "(jerk; 0 and 0.25 with junction deviation),model=0|1|2 (2 = SCV-V2).");
+    def->cli_params = "\"key=value,...\"";
+    def->set_default_value(new ConfigOptionString());
+
+    // Fork (headless CLI): docs/headless-cli.md describes the job format.
+    def = this->add("load_job", coString);
+    def->label = L("Load job file");
+    def->tooltip = L("Build the project from a JSON job file instead of model files: objects from mesh files or "
+                     "primitives with their transforms, per-object, per-part and per-height-range settings, "
+                     "modifiers, negative parts, support enforcers and blockers, painting by face selection rules "
+                     "(supports, seams, fuzzy skin, colour), cuts, filament assignment and plates with their own "
+                     "settings. Cannot be combined with model files, transforms or --load-assemble-list. "
+                     "See docs/headless-cli.md.");
+    def->cli_params = "job.json";
     def->set_default_value(new ConfigOptionString());
 
     /*def = this->add("output", coString);
