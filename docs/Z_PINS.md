@@ -30,9 +30,17 @@ orca-slicer --load-settings "machine.json;process.json" --load-filaments filamen
     --slice 0 --outputdir out/ part.stl            # process.json has "z_pins": "1", ...
 ```
 
-**Per object:** all z-pin keys are object settings. In a 3MF, add them to the object in
-`Metadata/model_settings.config`, then slice the 3MF with its own settings
-(`orca-slice part.3mf --as-is`, or `orca-slicer --slice 0 part.3mf`):
+**Per object:** all z-pin keys are object settings. They can't be set per part, modifier or height
+range: `--set-range` and job `height_ranges` reject them.
+
+```
+orca-slice part.stl --set-object z_pins=1 --set-object z_pin_diameter=1.2
+orca-slice job.json    # {"objects": [{"file": "bar.stl", "name": "pinned", "settings": {"z_pins": 1}},
+                       #              {"file": "bar.stl", "name": "plain"}]}
+```
+
+In a 3MF, add them to the object in `Metadata/model_settings.config`, then slice the 3MF with its own
+settings (`orca-slice part.3mf --as-is`, or `orca-slicer --slice 0 part.3mf`):
 
 ```xml
 <object id="2">
@@ -49,7 +57,8 @@ orca-slicer --load-settings "machine.json;process.json" --load-filaments filamen
 **Bad values:**
 - An out-of-range value stops the slice with exit code −18 and a message such as
   `z_pin_interval: 1 not in range [2, 100]`, without writing G-code.
-- An unknown `z_pin_pattern` falls back to `staggered` with a warning, like every Orca enum.
+- An unknown `z_pin_pattern` stops `orca-slice` with exit 2 and lists the allowed values. The raw
+  `orca-slicer` CLI falls back to `staggered` with a warning, as it does for every enum.
 
 `tests/cli/test_cli_z_pins.sh` covers all of this. It sets every key to a non-default value, slices with
 no display, reads each value's effect back out of the G-code, and checks the per-object 3MF path and the
