@@ -985,16 +985,16 @@ TEST_CASE("Z contouring is clamped to the toolhead clearance", "[PrintObject][ZA
     const coord_t c0 = scaled(100.), c1 = scaled(110.);
     chk.printed().add_layer({ ExPolygon(Polygon({ { c0, c0 }, { c1, c0 }, { c1, c1 }, { c0, c1 } })) }, 10.);
     const double safe = chk.min_nozzle_z(80, 105);
-    REQUIRE(safe > 9.);
-    REQUIRE(safe < 9.2);
+    // 10 - allowance 0.1 - (Beacon step 1.13 - margin 0.2)
+    REQUIRE(safe == Catch::Approx(8.97).margin(0.01));
 
-    // 20 mm from the tower at layer 9.2: a 0.2 mm dip would put the probe into it, so it is raised to the safe Z.
-    CHECK(zaa_clamp_to_clearance(-0.2, 80, 105, 9.2, &chk) == Catch::Approx(safe - 9.2).margin(1e-6));
+    // 20 mm from the tower at layer 9.1: a 0.2 mm dip would put the probe into it, so it is raised to the safe Z.
+    CHECK(zaa_clamp_to_clearance(-0.2, 80, 105, 9.1, &chk) == Catch::Approx(safe - 9.1).margin(1e-6));
     // A shallow dip above the safe Z, a lift, no checker, or nothing nearby: unchanged.
-    CHECK(zaa_clamp_to_clearance(-0.05, 80, 105, 9.2, &chk) == Catch::Approx(-0.05));
-    CHECK(zaa_clamp_to_clearance(0.04, 80, 105, 9.2, &chk) == Catch::Approx(0.04));
-    CHECK(zaa_clamp_to_clearance(-0.2, 80, 105, 9.2, nullptr) == Catch::Approx(-0.2));
-    CHECK(zaa_clamp_to_clearance(-0.2, 150, 30, 9.2, &chk) == Catch::Approx(-0.2));
+    CHECK(zaa_clamp_to_clearance(-0.05, 80, 105, 9.1, &chk) == Catch::Approx(-0.05));
+    CHECK(zaa_clamp_to_clearance(0.04, 80, 105, 9.1, &chk) == Catch::Approx(0.04));
+    CHECK(zaa_clamp_to_clearance(-0.2, 80, 105, 9.1, nullptr) == Catch::Approx(-0.2));
+    CHECK(zaa_clamp_to_clearance(-0.2, 150, 30, 9.1, &chk) == Catch::Approx(-0.2));
     // Never lifted above the layer, even where the planar layer itself would not clear.
     CHECK(zaa_clamp_to_clearance(-0.2, 80, 105, 8.0, &chk) == Catch::Approx(0.));
 }
@@ -1013,10 +1013,16 @@ TEST_CASE("Z contouring within one layer never meets the toolhead on a single pa
     const auto a = contoured_heights(*plain.objects().front());
     const auto b = contoured_heights(*checked.objects().front());
     REQUIRE(a.size() == b.size());
-    size_t points = 0;
-    for (size_t i = 0; i < a.size(); ++i) {
-        CHECK(a[i] == b[i]);
-        points += a[i].size();
-    }
+    size_t points = 0, moved = 0, only_one = 0;
+    for (size_t i = 0; i < a.size(); ++i)
+        for (const auto &[xy, z] : a[i]) {
+            const auto it = b[i].find(xy);
+            if (it == b[i].end()) { ++only_one; continue; }
+            ++points;
+            if (it->second != z)
+                ++moved;
+        }
+    CHECK(moved == 0);
+    CHECK(only_one == 0);
     CHECK(points > 100);
 }

@@ -970,9 +970,11 @@ void PrintObject::contour_z()
                 m_print->throw_if_canceled();
                 std::unique_ptr<Clearance::ClearanceChecker> clearance;
                 if (!clearance_shape.empty()) {
-                    const Layer *layer = m_layers[layer_idx];
+                    // Up to and including the layer below (add_layers_between() takes print_z <= max + EPSILON,
+                    // so this layer's own print_z - EPSILON would still count this layer).
+                    const double below_z = m_layers[layer_idx - 1]->print_z;
                     clearance = std::make_unique<Clearance::ClearanceChecker>(clearance_shape, clearance_area, clearance_options);
-                    clearance->printed().add_layers_between(*this, layer->print_z - clearance_band, layer->print_z - EPSILON, Point(0, 0));
+                    clearance->printed().add_layers_between(*this, below_z - clearance_band, below_z, Point(0, 0));
                 }
                 m_layers[layer_idx]->make_contour_z(imesh, clearance.get());
 
