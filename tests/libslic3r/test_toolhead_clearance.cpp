@@ -14,6 +14,7 @@
 #include <iostream>
 
 using namespace Slic3r;
+using Catch::Approx;
 namespace C = Slic3r::Clearance;
 
 namespace {
