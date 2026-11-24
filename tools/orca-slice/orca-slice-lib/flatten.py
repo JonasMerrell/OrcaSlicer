@@ -31,6 +31,8 @@ import params
 ORCA = os.environ.get("ORCA_DIR") or os.path.expanduser("~/OrcaSlicer/build/package")
 SYS_PROFILES = os.path.join(ORCA, "resources", "profiles")
 BUNDLE = os.environ.get("ORCA_PRESETS") or os.path.expanduser("~/.config/OrcaSlicer/user/default")
+# presets pulled from the filament hub by `orca-slice hub pull`; the desktop bundle wins on a name clash
+HUB_CACHE = os.environ.get("ORCA_HUB_CACHE") or os.path.expanduser("~/.cache/orca-slice/hub")
 
 # meta keys stripped from a flattened preset (they only make sense on a stored
 # user preset). `inherits` and `from` are handled explicitly in finalize().
@@ -75,6 +77,15 @@ def build_index():
         n = d.get("name")
         if n and d.get("type") in ("machine", "process", "filament"):
             idx.setdefault(n, (path, True))
+    for sub in ("printer", "machine", "process", "filament"):
+        for path in glob.glob(os.path.join(HUB_CACHE, sub, "*.json")):
+            try:
+                d = _load(path)
+            except Exception:
+                continue
+            n = d.get("name")
+            if n:
+                idx[n] = (path, False)  # hub copy overrides system, desktop bundle overrides it
     for sub in ("printer", "machine", "process", "filament"):
         for path in glob.glob(os.path.join(BUNDLE, sub, "*.json")):
             try:
