@@ -146,8 +146,9 @@ _HELP = {}
 def binary_help():
     if "text" not in _HELP:
         try:
-            _HELP["text"] = subprocess.run([ORCA_BIN, "--help"], capture_output=True, text=True,
-                                           env=orca_env(), timeout=60).stdout
+            with tempfile.TemporaryDirectory(prefix="orca-slice-") as tmp:  # it may drop a result.json in cwd
+                _HELP["text"] = subprocess.run([ORCA_BIN, "--help"], capture_output=True, text=True,
+                                               env=orca_env(), timeout=60, cwd=tmp).stdout
         except Exception:
             _HELP["text"] = ""
     return _HELP["text"]
@@ -181,8 +182,9 @@ def load_catalog():
         if not binary_has("--list-options"):
             return None
         try:
-            out = subprocess.run([ORCA_BIN, "--list-options", "-"], capture_output=True, text=True,
-                                 env=orca_env(), timeout=120).stdout
+            with tempfile.TemporaryDirectory(prefix="orca-slice-") as tmp:
+                out = subprocess.run([ORCA_BIN, "--list-options", "-"], capture_output=True, text=True,
+                                     env=orca_env(), timeout=120, cwd=tmp).stdout
             data = json.loads(out[out.index("{"):])
         except Exception:
             return None
