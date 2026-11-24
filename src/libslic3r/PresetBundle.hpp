@@ -215,6 +215,10 @@ struct PublishedConfig
 class PresetBundle
 {
 public:
+    // Project-level option keys (stored in the project / 3MF, not in a preset). Used by the
+    // headless CLI option catalog (CliOptionCatalog.cpp) to tell where each option lives.
+    static const std::vector<std::string>& project_options();
+
     // ---- Per-vendor preset cache --------------------------------------------
     // One cache file per vendor (plus the Orca filament library), stamped with
     // the vendor's own profile version rather than a directory scan. The bytes

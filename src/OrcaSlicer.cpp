@@ -37,6 +37,8 @@
 #include <algorithm>
 #include "libslic3r/Format/bbs_3mf.hpp"
 #include "libslic3r/Format/AssembleList.hpp"
+#include "libslic3r/Format/CliJob.hpp"
+#include "libslic3r/CliOptionCatalog.hpp"
 #include <cstdlib>
 #include <stdlib.h>
 #include <stdexcept>
@@ -108,6 +110,7 @@
 #include "libslic3r/SLAPrint.hpp"
 #include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/Format/AMF.hpp"
+#include "CLICalibration.hpp" // ORCA headless-cli: calibration
 #include "libslic3r/Format/3mf.hpp"
 #include "libslic3r/Format/STL.hpp"
 #include "libslic3r/Format/OBJ.hpp"
@@ -267,6 +270,8 @@ typedef struct _sliced_info {
     // Structured slicing warnings for result.json, and whether --strict was on.
     nlohmann::json      warnings = nlohmann::json::array();
     bool                strict_mode {false};
+    // ORCA headless-cli: calibration, what --calib generated (null without --calib).
+    nlohmann::json      calibration;
 }sliced_info_t;
 std::vector<PrintBase::SlicingStatus> g_slicing_warnings;
 
@@ -589,6 +594,9 @@ void record_exit_reson(std::string outputdir, int code, int plate_id, std::strin
 
         j["warnings"]    = sliced_info.warnings;
         j["strict_mode"] = sliced_info.strict_mode;
+        // ORCA headless-cli: calibration
+        if (!sliced_info.calibration.is_null())
+            j["calibration"] = sliced_info.calibration;
 
         boost::nowide::ofstream c;
         c.open(result_file, std::ios::out | std::ios::trunc);
@@ -1451,7 +1459,7 @@ int CLI::run(int argc, char **argv)
             }
         }
         // Without input there is nothing to inspect; fail rather than print nothing and exit 0.
-        if (m_input_files.empty() && m_config.opt_string("load_assemble_list").empty()) {
+        if (m_input_files.empty() && m_config.opt_string("load_assemble_list").empty() && m_config.opt_string("load_job").empty()) {
             boost::nowide::cerr << "--inspect-mesh needs an input file or --load-assemble-list" << std::endl;
             record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, cli_errors[CLI_INVALID_PARAMS], sliced_info);
             flush_and_exit(CLI_INVALID_PARAMS);
@@ -1474,7 +1482,7 @@ int CLI::run(int argc, char **argv)
             }
         }
         // Without input there is nothing to inspect; fail rather than print nothing and exit 0.
-        if (m_input_files.empty() && m_config.opt_string("load_assemble_list").empty()) {
+        if (m_input_files.empty() && m_config.opt_string("load_assemble_list").empty() && m_config.opt_string("load_job").empty()) {
             boost::nowide::cerr << "--inspect-paint needs an input file or --load-assemble-list" << std::endl;
             record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, cli_errors[CLI_INVALID_PARAMS], sliced_info);
             flush_and_exit(CLI_INVALID_PARAMS);
@@ -1569,6 +1577,23 @@ int CLI::run(int argc, char **argv)
         const int check_rc = crep.ran ? CLI_SUCCESS : CLI_INVALID_PARAMS;
         record_exit_reson(outfile_dir, check_rc, 0, crep.ran ? cli_errors[CLI_SUCCESS] : crep.error, sliced_info);
         flush_and_exit(check_rc);
+    }
+
+    // ORCA headless-cli: --list-options writes the option catalog and exits; it needs no input.
+    if (std::find(m_actions.begin(), m_actions.end(), "list_options") != m_actions.end()) {
+        const std::string target = m_config.opt_string("list_options");
+        const std::string text   = cli_option_catalog_json().dump(1);
+        if (target.empty() || target == "-") {
+            boost::nowide::cout << text << std::endl;
+        } else {
+            boost::nowide::ofstream out(target);
+            out << text << std::endl;
+            if (!out) {
+                boost::nowide::cerr << "--list-options: can't write " << target << std::endl;
+                return CLI_INVALID_PARAMS;
+            }
+        }
+        return CLI_SUCCESS;
     }
 
     bool start_gui = m_actions.empty() && !downward_check;
@@ -1820,13 +1845,78 @@ int CLI::run(int argc, char **argv)
     BOOST_LOG_TRIVIAL(info) << boost::format("plate_to_slice=%1%, normative_check=%2%, use_first_fila_as_default=%3%")%plate_to_slice %normative_check %use_first_fila_as_default;
     unsigned int input_index = 0;
     std::vector<RGBA> input_obj_colours;
+    // ORCA headless-cli: calibration. --calib generates the test model instead of loading model files.
+    CliCalibration cli_calib;
+    if (const std::string calib_mode = m_config.opt_string("calib"); !calib_mode.empty() || !m_config.opt_string("calib_params").empty()) {
+        std::string err = calib_mode.empty() ? std::string("--calib-params needs --calib") :
+                                               cli_calib_parse(calib_mode, m_config.opt_string("calib_params"), cli_calib);
+        if (err.empty() && (!m_input_files.empty() || !m_config.opt_string("load_assemble_list").empty() || !m_config.opt_string("load_job").empty()))
+            err = "--calib generates its own model: it cannot be combined with model files, --load-assemble-list or --load-job";
+        if (err.empty())
+            for (const std::string &t : m_transforms)
+                if (t != "arrange" && t != "orient" && t != "ensure_on_bed") {
+                    std::string flag = t;
+                    std::replace(flag.begin(), flag.end(), '_', '-');
+                    err = "--calib cannot be combined with --" + flag + " (only --arrange and --orient)";
+                    break;
+                }
+        if (!err.empty()) {
+            boost::nowide::cerr << "--calib: " << err << std::endl;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, err, sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+    }
+
+    // ORCA headless-cli: a job file builds the project like an assemble list does (see Format/CliJob.hpp).
+    std::string load_job = m_config.opt_string("load_job");
+    if (!load_job.empty() && (!load_assemble_list.empty() || !m_input_files.empty() || !m_transforms.empty())) {
+        boost::nowide::cerr << "--load-job cannot be combined with model files, transforms (--arrange, --orient, --scale, ...) "
+                               "or --load-assemble-list: put objects, transforms and arrange in the job file" << std::endl;
+        record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, "--load-job cannot be combined with model files, transforms or --load-assemble-list", sliced_info);
+        flush_and_exit(CLI_INVALID_PARAMS);
+    }
     if (!load_assemble_list.empty() && ((m_input_files.size() > 0) || (m_transforms.size() > 0)))
     {
         BOOST_LOG_TRIVIAL(error) << boost::format("load_assemble_list should not be used with input model files to load and should not be sued with transforms");
         record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, cli_errors[CLI_INVALID_PARAMS], sliced_info);
         flush_and_exit(CLI_INVALID_PARAMS);
     }
-    if (load_assemble_list.empty()) {
+    if (!load_job.empty()) {
+        Model        model;
+        CliJobResult job;
+        if (!load_cli_job(load_job, model, job)) {
+            boost::nowide::cerr << "--load-job: " << job.error << std::endl;
+            record_exit_reson(outfile_dir, CLI_CONFIG_FILE_ERROR, 0, job.error, sliced_info);
+            flush_and_exit(CLI_CONFIG_FILE_ERROR);
+        }
+        if (int(job.plates.size()) > MAX_PLATE_COUNT) {
+            const std::string msg = "--load-job: too many plates (" + std::to_string(job.plates.size()) + ", at most " + std::to_string(MAX_PLATE_COUNT) + ")";
+            boost::nowide::cerr << msg << std::endl;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, msg, sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+        plate_data_src.resize(job.plates.size());
+        for (size_t index = 0; index < job.plates.size(); ++index) {
+            PlateData *plate_data   = new PlateData();
+            plate_data->plate_name  = job.plates[index].plate_name;
+            plate_data->plate_index = int(index);
+            ConfigSubstitutionContext ctx(ForwardCompatibilitySubstitutionRule::Enable);
+            for (const auto &[key, value] : job.plates[index].plate_params)
+                plate_data->config.set_deserialize(key, value, ctx);
+            plate_data_src[index] = plate_data;
+        }
+        for (const auto &[id, orient] : job.orient)
+            orients_requirement[id] = orient;
+        for (const auto &obj : job.report) {
+            std::string line;
+            for (const auto &[k, v] : obj)
+                line += (line.empty() ? "" : ", ") + k + "=" + v;
+            BOOST_LOG_TRIVIAL(info) << "--load-job object: " << line;
+        }
+        assemble_plate_info_list = std::move(job.plates);
+        m_models.push_back(std::move(model));
+    }
+    else if (load_assemble_list.empty()) {
         for (const std::string& file : m_input_files) {
             if (!boost::filesystem::exists(file)) {
                 boost::nowide::cerr << "No such file: " << file << std::endl;
@@ -2143,6 +2233,10 @@ int CLI::run(int argc, char **argv)
         model.add_default_instances();
         m_models.push_back(std::move(model));
     }
+    // ORCA headless-cli: calibration. The test model is built once the presets are merged (cli_calib_setup()
+    // below); until then the CLI works on an empty model.
+    if (cli_calib.active && m_models.empty())
+        m_models.emplace_back();
 
     if (!is_bbl_3mf && plate_to_slice > 0)
     {
@@ -4296,6 +4390,19 @@ int CLI::run(int argc, char **argv)
     // (command line options override --load files)
     m_print_config.apply(m_extra_config, true);
 
+    // ORCA headless-cli: the slicer reads layer_height from every height range (the GUI always
+    // stores it), so a range from a job file or assemble list without one gets the object's layer
+    // height. Without it layer_height_profile_from_ranges() dereferences a missing option.
+    if (const ConfigOptionFloat *lh = m_print_config.option<ConfigOptionFloat>("layer_height")) {
+        for (Model &model : m_models)
+            for (ModelObject *object : model.objects) {
+                const double object_lh = object->config.has("layer_height") ? object->config.opt_float("layer_height") : lh->value;
+                for (auto &[range, range_config] : object->layer_config_ranges)
+                    if (!range_config.has("layer_height"))
+                        range_config.set_key_value("layer_height", new ConfigOptionFloat(object_lh));
+            }
+    }
+
     if (!cli_override_before.empty()) {
         std::vector<std::string> &columns = m_print_config.option<ConfigOptionStrings>("different_settings_to_system", true)->values;
         auto owned_by = [](const std::vector<std::string> &options, const std::string &key) {
@@ -4353,6 +4460,28 @@ int CLI::run(int argc, char **argv)
     }
     // Normalizing after importing the 3MFs / AMFs
     m_print_config.normalize_fdm();
+
+    // ORCA headless-cli: calibration. Build the test model and apply its settings to the merged config, as
+    // the Calibration menu does to the selected presets. Keys typed on the command line are left alone.
+    if (cli_calib.active) {
+        std::set<std::string> user_keys;
+        for (const std::string &key : m_config.keys())
+            if (print_config_def.get(key) != nullptr)
+                user_keys.insert(key);
+        std::string err = m_models.size() == 1 && m_models[0].objects.empty() ?
+                              cli_calib_setup(cli_calib, m_models[0], m_print_config, user_keys) :
+                              std::string("--calib needs an empty project");
+        if (!err.empty()) {
+            boost::nowide::cerr << "--calib " << cli_calib.mode_name << ": " << err << std::endl;
+            record_exit_reson(outfile_dir, CLI_INVALID_PARAMS, 0, err, sliced_info);
+            flush_and_exit(CLI_INVALID_PARAMS);
+        }
+        for (const std::string &w : cli_calib.warnings)
+            boost::nowide::cerr << "warning: --calib " << cli_calib.mode_name << ": " << w << std::endl;
+        sliced_info.calibration = cli_calib_to_json(cli_calib);
+        if (cli_calib.keep_layout)
+            need_arrange = false;
+    }
 
     // A mixed slot is virtual but still needs a filament entry of its own. Without one, feature
     // filament ids aimed at it fall outside the filament count, are reset to the first filament
@@ -5469,6 +5598,9 @@ int CLI::run(int argc, char **argv)
         }
     }
 
+    // ORCA headless-cli: calibration. The PA pattern places its handle objects itself; --arrange would break it.
+    if (cli_calib.active && cli_calib.keep_layout)
+        need_arrange = false;
     oriented_or_arranged |= need_arrange;
 
     BOOST_LOG_TRIVIAL(info) << boost::format("before arrange, need_arrange=%1%, duplicate_count %2%, filament_color_changed %3%")%need_arrange %duplicate_count %filament_color_changed;
@@ -7112,7 +7244,16 @@ int CLI::run(int argc, char **argv)
                             ConfigOptionEnumsGeneric* final_nozzle_volume_type_opt = new_print_config.option<ConfigOptionEnumsGeneric>("nozzle_volume_type", true);
                             final_nozzle_volume_type_opt->values.resize(new_extruder_count, nvtStandard);
                         }
+                        // ORCA headless-cli: calibration. The PA pattern draws its lines as per-layer custom G-code.
+                        if (cli_calib.active) {
+                            const std::string &pm = new_print_config.opt_string("printer_model", true);
+                            cli_calib_before_slice(cli_calib, model, index, part_plate->get_origin(), new_print_config,
+                                                   pm.compare(0, 9, "Bambu Lab") == 0, part_plate->get_objects_on_this_plate());
+                        }
                         print->apply(model, new_print_config);
+                        // ORCA headless-cli: calibration
+                        if (cli_calib.active && print_fff != nullptr)
+                            print_fff->set_calib_params(cli_calib.params);
                         BOOST_LOG_TRIVIAL(info) << boost::format("set no_check to %1%:")%no_check;
                         print->set_no_check_flag(no_check);//BBS
 

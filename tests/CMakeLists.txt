@@ -97,6 +97,15 @@ add_subdirectory(fff_print)
 add_subdirectory(sla_print)
 add_subdirectory(filament_group)
 
+# Fork: every GUI action that changes the output must have a row (with its CLI path) in
+# docs/headless-cli-audit.json. Static source scan, no binary needed; the option half of the
+# audit is checked by libslic3r_tests [HeadlessCLI].
+find_program(ORCA_AUDIT_PYTHON NAMES python3)
+if (ORCA_AUDIT_PYTHON)
+    add_test(NAME headless_cli_audit COMMAND ${ORCA_AUDIT_PYTHON} ${CMAKE_SOURCE_DIR}/scripts/headless_cli_audit.py check)
+    set_tests_properties(headless_cli_audit PROPERTIES LABELS "HeadlessCLI" TIMEOUT 60)
+endif ()
+
 # End-to-end checks of the orca-slicer binary. Linux only: they read result.json, which the CLI
 # writes on Linux only. src/ is added before tests/, so the target is known here.
 if (UNIX AND NOT APPLE AND TARGET OrcaSlicer)

@@ -225,6 +225,8 @@ set(lisbslic3r_sources
     Format/ImportNames.cpp
     Format/ImportNames.hpp
     Format/AssembleList.cpp
+    Format/CliJob.cpp
+    Format/CliJob.hpp
     Format/AssembleList.hpp
     Format/DRC.cpp
     Format/DRC.hpp
@@ -421,6 +423,8 @@ set(lisbslic3r_sources
     PolygonTrimmer.hpp
     Polyline.cpp
     Polyline.hpp
+    CliOptionCatalog.cpp
+    CliOptionCatalog.hpp
     PresetBundle.cpp
     PresetBundle.hpp
     PrinterBedAssets.hpp
