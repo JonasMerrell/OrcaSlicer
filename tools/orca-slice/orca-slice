@@ -774,6 +774,7 @@ def cmd_options(argv):
     cat = load_catalog()
     if cat is None:
         need_flag("--list-options", "orca-slice options")
+        raise UsageError(f"the slicer at {ORCA_BIN} lists --list-options but didn't produce a catalog")
     if a.cli:
         print(json.dumps(cat["__cli__"], indent=1))
         return 0
