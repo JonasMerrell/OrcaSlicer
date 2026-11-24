@@ -13407,6 +13407,16 @@ CLIActionsConfigDef::CLIActionsConfigDef()
     def->tooltip = L("This outputs the model\u2019s information.");
     def->set_default_value(new ConfigOptionBool(false));
 
+    // Fork: check finished G-code for toolhead collisions with the part it prints (non-planar).
+    def = this->add("check_toolhead_clearance", coString);
+    def->label = L("Check toolhead clearance of G-code");
+    def->tooltip = L("Replay a G-code file, build the printed part from its extrusions and report every move where the toolhead "
+                     "(toolhead_clearance_profile / toolhead_clearance_mesh from --load-settings) hits what was printed before it. "
+                     "Prints a JSON report to stdout (and <name>.clearance.json in --outputdir), then exits. "
+                     "Runs whether or not toolhead_clearance_enable is set.");
+    def->cli_params = "file.gcode";
+    def->set_default_value(new ConfigOptionString());
+
     def = this->add("inspect_mesh", coBool);
     def->label = L("Inspect mesh (JSON to stdout)");
     def->tooltip = L("Print a JSON summary of each loaded object to stdout, then exit: its bounding boxes and the "
