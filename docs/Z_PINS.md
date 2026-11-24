@@ -5,12 +5,55 @@ open through several layers. Every few layers the nozzle parks over each channel
 molten filament from above. A pin fuses across all the layer lines it crosses, so a crack between two
 layers has to break the pins too.
 
-It is off by default. Turn it on under **Strength → Advanced → Z-pins**, or from the command line:
+It is off by default. Turn it on under **Strength → Z-pins**, or from the command line (below).
+
+## Command line (headless)
+
+Everything works headless: no display, no GUI dialogs. Every setting in the table below is an ordinary
+process key.
+
+**`orca-slice` (netdash wrapper):** `--set key=value`, repeatable.
 
 ```
-orca-slicer ... --load-settings "printer.json;process.json" ...   # with "z_pins": "1" in the process
-orca-slice part.stl --set z_pins=1 --set z_pin_diameter=1.5 --set z_pin_interval=10
+orca-slice part.stl --set z_pins=1
+orca-slice part.stl --set z_pins=1 --set z_pin_diameter=1.8 --set z_pin_spacing=5 \
+    --set z_pin_pattern=grid --set z_pin_interval=8 --set z_pin_overfill=120% \
+    --set z_pin_in_inner_walls=0 --set z_pin_dwell=0.1
+orca-slice part.stl --set z_pins=1 --html     # check the channels in the toolpath preview
 ```
+
+**The fork's own CLI:** put the keys in the process JSON passed to `--load-settings`. The file must be
+self-contained, with no `inherits`, or the CLI can't resolve it:
+
+```
+orca-slicer --load-settings "machine.json;process.json" --load-filaments filament.json \
+    --slice 0 --outputdir out/ part.stl            # process.json has "z_pins": "1", ...
+```
+
+**Per object:** all z-pin keys are object settings. In a 3MF, add them to the object in
+`Metadata/model_settings.config`, then slice the 3MF with its own settings
+(`orca-slice part.3mf --as-is`, or `orca-slicer --slice 0 part.3mf`):
+
+```xml
+<object id="2">
+    <metadata key="name" value="bar_pinned"/>
+    <metadata key="z_pins" value="1"/>
+    <metadata key="z_pin_diameter" value="1.2"/>
+```
+
+**Checking the output:**
+- Each fill is a `; Z_PIN_INJECT X.. Y.. depth .. volume .. mm3 flow .. mm3/s` line, and each fill layer
+  starts with `; Z_PINS layer N z Z: k injections`.
+- The settings used are in the G-code's config footer (`; z_pin_diameter = 1.8`).
+
+**Bad values:**
+- An out-of-range value stops the slice with exit code −18 and a message such as
+  `z_pin_interval: 1 not in range [2, 100]`, without writing G-code.
+- An unknown `z_pin_pattern` falls back to `staggered` with a warning, like every Orca enum.
+
+`tests/cli/test_cli_z_pins.sh` covers all of this. It sets every key to a non-default value, slices with
+no display, reads each value's effect back out of the G-code, and checks the per-object 3MF path and the
+range errors. Run it with `ctest -C Release -R cli_z_pins`.
 
 ## Background
 
@@ -83,7 +126,7 @@ Each injection is marked in the G-code:
 
 ## Limits
 
-- Pins are object settings: a height range modifier can't switch them on for part of an object.
+- Pins are object settings: a height range or part modifier can't switch them on for part of an object.
   To compare pinned and plain parts on one plate, set `z_pins` per object (object settings in the GUI,
   or `<metadata key="z_pins" value="1"/>` on the object in a 3MF's `Metadata/model_settings.config`).
 - The nozzle stays above the layer, so the channels must be wide enough for the melt to fall in.
