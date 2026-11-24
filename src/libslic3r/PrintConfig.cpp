@@ -2867,6 +2867,41 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(40));
 
+    // Fork: toolhead clearance for non-planar printing.
+    def = this->add("toolhead_clearance_enable", coBool);
+    def->label = L("Toolhead clearance check");
+    def->tooltip = L("Check non-planar moves against the already printed part using the toolhead shape below. "
+                     "Non-planar features (Z anti-aliasing, non-planar infill) limit how far the nozzle may dip, "
+                     "and the finished G-code is scanned for toolhead collisions. Has no effect on planar prints.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("toolhead_clearance_profile", coPoints);
+    def->label = L("Toolhead clearance profile");
+    def->tooltip = L("Underside of the toolhead as a stepped cone around the nozzle, as \"radius x height\" pairs in mm: "
+                     "within each radius from the nozzle axis (beyond the previous one) nothing hangs lower than that height "
+                     "above the nozzle tip. A last step with a large radius (e.g. 1000x30) models the gantry. "
+                     "Example: 0.5x0, 4x1.6, 45x1.1, 1000x30");
+    def->mode = comAdvanced;
+    def->gui_type = ConfigOptionDef::GUIType::one_string;
+    def->set_default_value(new ConfigOptionPoints());
+
+    def = this->add("toolhead_clearance_mesh", coString);
+    def->label = L("Toolhead clearance mesh");
+    def->tooltip = L("Optional STL or OBJ of the toolhead in the nozzle frame (nozzle tip at the origin, printer X/Y/Z axes). "
+                     "Where both are set, the lower of the mesh and the profile is used.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionString(""));
+
+    def = this->add("toolhead_clearance_margin", coFloat);
+    def->label = L("Toolhead clearance margin");
+    def->tooltip = L("Extra gap kept between the toolhead and the printed part, on top of the profile or mesh. "
+                     "It never applies to the nozzle tip itself.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.2));
+
     def = this->add("nozzle_height", coFloat);
     def->label = L("Nozzle height");
     def->tooltip = L("The height of nozzle tip.");

@@ -118,6 +118,9 @@ public:
     // Cells in the nozzle frame, sorted by height (ascending), for the checker.
     struct Cell { int ix, iy; double h; };
     const std::vector<Cell> &cells_by_height() const { return m_sorted; }
+    // Lowest height over the square of half-size TILE/2+1 cells around (dx, dy): a lower
+    // bound for a whole printed-volume tile centred there.
+    double box_min(double dx, double dy) const;
 
 private:
     void finish();
@@ -126,6 +129,8 @@ private:
     std::vector<double> m_cells;     // row-major, +inf = empty
     std::vector<Cell>   m_sorted;    // finite cells by height
     double m_far = INF;
+    int    m_box_r = 0, m_box_half = 0;
+    std::vector<double> m_box;       // min-filtered m_cells, padded by m_box_r
 };
 
 // Height field of the printed part over the plate: for each cell, the highest nozzle Z
@@ -147,6 +152,9 @@ public:
     // Every layer of `object` whose print_z <= max_print_z (all of them if INF), lslices
     // shifted by `shift` (scaled, an instance's shift on the plate).
     void add_layers_below(const PrintObject &object, double max_print_z, const Point &shift);
+    // Layers (and support layers) with min_print_z < print_z <= max_print_z. Lets a
+    // feature build its volume incrementally, or one band at a time.
+    void add_layers_between(const PrintObject &object, double min_print_z, double max_print_z, const Point &shift);
     // An extrusion path (nozzle positions, mm) laying a bead `width` wide. Z may vary.
     void add_path(const std::vector<Vec3d> &path, double width);
     void add_segment(const Vec3d &a, const Vec3d &b, double width);
@@ -165,14 +173,16 @@ public:
     int  ix_of(double x) const;
     int  iy_of(double y) const;
 
+    // Tiles of TILE x TILE cells keep their maximum, to skip low regions quickly.
+    static constexpr int TILE = 16;
+    double tile_max(int tx, int ty) const { return (tx < 0 || ty < 0 || tx >= m_tx || ty >= m_ty) ? -INF : m_tile[size_t(ty) * m_tx + tx]; }
+
 private:
     void raise(int ix, int iy, double z);
     BoundingBoxf m_area;
     double m_cell = 0.25;
     int    m_nx = 0, m_ny = 0;
     std::vector<float> m_top;
-    // Tile maxima (TILE x TILE cells) to skip empty or low regions quickly.
-    static constexpr int TILE = 16;
     int    m_tx = 0, m_ty = 0;
     std::vector<float> m_tile;
     double m_max = -INF;
@@ -188,6 +198,10 @@ struct Options
     double allowance = 0.1;
     // Path sampling step along segments (mm). 0 = the printed volume's cell size.
     double step = 0.;
+    // check_path computes min_z exactly only down to `depth` below the lower of the point's
+    // Z and reference_z; anything lower is reported as that floor (i.e. "at least this much
+    // room"). Keeps planar neighbourhoods cheap.
+    double depth = 1.0;
 };
 
 // Result of checking one planned path.
@@ -228,6 +242,10 @@ public:
     // Check a planned path (nozzle positions, mm), sampling between points.
     PathResult check_path(const std::vector<Vec3d> &path, double reference_z) const;
 
+    // min_nozzle_z, but only resolved above `floor`: returns max(floor, min safe Z).
+    // Much cheaper when the floor is close to the answer.
+    double required_z(double x, double y, double floor) const;
+
 private:
     ToolheadShape m_shape;
     PrintedVolume m_printed;
@@ -248,9 +266,10 @@ struct GCodeCheckReport
 {
     bool   ran = false;
     std::string error;
-    size_t moves_checked = 0;
+    size_t moves_total = 0;                 // moves replayed after the first extrusion
+    size_t moves_checked = 0;               // moves with printed material above the nozzle tip nearby
     size_t collisions = 0;                  // moves that collide
-    double min_gap = INF;                   // smallest gap seen over all checked moves (mm)
+    double min_gap = INF;                   // smallest gap (mm) over checked moves, measured below 2 mm
     size_t min_gap_line = 0;
     std::vector<GCodeCollision> first;      // first `max_report` colliding moves
     std::string to_json() const;

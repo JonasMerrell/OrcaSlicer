@@ -269,7 +269,7 @@ void change_opt_value(DynamicPrintConfig& config, const t_config_option_key& opt
 				// before the user can accept or cancel the copy operation.
 				break;
 			}
-			if (opt_key == "printable_area" || opt_key == "bed_exclude_area" || opt_key == "thumbnails" || opt_key == "wrapping_exclude_area" ) {
+			if (opt_key == "printable_area" || opt_key == "bed_exclude_area" || opt_key == "thumbnails" || opt_key == "wrapping_exclude_area" || opt_key == "toolhead_clearance_profile") {
 				config.option<ConfigOptionPoints>(opt_key)->values = boost::any_cast<std::vector<Vec2d>>(value);
 				if (opt_key == "bed_exclude_area") {
 					ConfigOptionPoints normalized(boost::any_cast<std::vector<Vec2d>>(value));

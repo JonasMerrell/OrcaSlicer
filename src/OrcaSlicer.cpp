@@ -156,6 +156,7 @@
 #include "slic3r/GUI/Jobs/SendJob.hpp"
 #include <boost/nowide/convert.hpp>
 #include <stdio.h>
+#include "libslic3r/Clearance/ToolheadClearance.hpp"
 
 namespace fs = boost::filesystem;
 using json = nlohmann::json;
@@ -7309,6 +7310,37 @@ int CLI::run(int argc, char **argv)
                                         else {
                                             BOOST_LOG_TRIVIAL(error) << "plate " << index + 1 << ": HTML export failed: " << html_error;
                                             std::cerr << "HTML export failed: " << html_error << std::endl;
+                                        }
+                                    }
+                                    // Fork: toolhead clearance check of the finished G-code (non-planar printing).
+                                    // Off unless toolhead_clearance_enable; the report goes next to the G-code as
+                                    // plate_N.clearance.json and collisions become a "toolhead_collision" warning.
+                                    if (print_fff->config().toolhead_clearance_enable.value) {
+                                        std::string shape_err;
+                                        Clearance::ToolheadShape shape = Clearance::ToolheadShape::from_config(print_fff->config(), &shape_err);
+                                        BoundingBoxf plate_box;
+                                        for (const Vec2d& pt : print_fff->config().printable_area.values)
+                                            plate_box.merge(pt);
+                                        plate_box.offset(20.);
+                                        Clearance::Options copt;
+                                        copt.margin = print_fff->config().toolhead_clearance_margin.value;
+                                        Clearance::GCodeCheckReport crep;
+                                        if (shape.empty())
+                                            crep.error = shape_err.empty() ? std::string("toolhead_clearance_enable is set but no profile or mesh is given") : shape_err;
+                                        else
+                                            crep = Clearance::check_gcode(outfile, shape, plate_box, copt);
+                                        boost::filesystem::path cpath(outfile);
+                                        cpath.replace_extension(".clearance.json");
+                                        if (!outfile_dir.empty()) {
+                                            boost::nowide::ofstream cf(cpath.string());
+                                            cf << crep.to_json() << std::endl;
+                                        }
+                                        BOOST_LOG_TRIVIAL(info) << "plate " << index + 1 << ": toolhead clearance: " << crep.to_json();
+                                        if (crep.collisions > 0 || !crep.error.empty()) {
+                                            std::cerr << "toolhead clearance: " << (crep.error.empty() ? std::to_string(crep.collisions) + " colliding move(s), first at line " + std::to_string(crep.first.empty() ? 0 : crep.first[0].line) : crep.error) << std::endl;
+                                            cli_record_warning(sliced_info, crep.error.empty() ? "toolhead_collision" : "toolhead_clearance_error",
+                                                               nlohmann::json{{"plate", index + 1}, {"collisions", crep.collisions}, {"error", crep.error},
+                                                                              {"first_line", crep.first.empty() ? 0 : crep.first[0].line}});
                                         }
                                     }
 
