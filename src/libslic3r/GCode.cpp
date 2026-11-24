@@ -8706,7 +8706,9 @@ std::string GCode::extrude_loop(const ExtrusionLoop&                       loop_
     bool enable_seam_slope = ((seam_scarf_type == SeamScarfType::External && !is_hole) || seam_scarf_type == SeamScarfType::All) &&
         !m_config.spiral_mode && !m_config.belt_printer.value &&
         (loop.role() == erExternalPerimeter || (loop.role() == erPerimeter && m_config.seam_slope_inner_walls)) &&
-        layer_id() > 0;
+        layer_id() > 0 &&
+        // Orca: a scarf ramps from the nominal layer Z and would drop a Z-offset (brick layers) wall.
+        std::none_of(loop.paths.begin(), loop.paths.end(), [](const ExtrusionPath &path) { return path.z_contoured; });
     const auto nozzle_diameter = EXTRUDER_CONFIG(nozzle_diameter);
     if (enable_seam_slope && m_config.seam_slope_conditional.value) {
         enable_seam_slope = loop.is_smooth(m_config.scarf_angle_threshold.value * M_PI / 180., nozzle_diameter);
@@ -9119,7 +9121,11 @@ std::string GCode::extrude_perimeters(const Print &print, const std::vector<Obje
             // for a second pass after the infill that anchors them. Infill already precedes infill first walls.
             const bool defer_unsupported = !is_infill_first;
             auto waits_for_infill = [](const ExtrusionEntity *ee) {
-                return ee->is_loop() && static_cast<const ExtrusionLoop *>(ee)->print_after_infill;
+                if (ee->is_loop())
+                    return static_cast<const ExtrusionLoop *>(ee)->print_after_infill;
+                // Orca: brick layers raise open walls too.
+                const auto *multipath = dynamic_cast<const ExtrusionMultiPath *>(ee);
+                return multipath != nullptr && multipath->print_after_infill;
             };
 
             // The deferred pass runs after the infill, so the loops the first pass emitted are

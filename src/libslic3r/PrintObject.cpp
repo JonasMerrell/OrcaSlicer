@@ -16,6 +16,7 @@
 #include "Geometry.hpp"
 #include "I18N.hpp"
 #include "Layer.hpp"
+#include "BrickLayers.hpp"
 #include "MutablePolygon.hpp"
 #include "PerimeterGenerator.hpp"
 #include "PrintBase.hpp"
@@ -642,6 +643,10 @@ void PrintObject::make_perimeters()
     );
     m_print->throw_if_canceled();
     BOOST_LOG_TRIVIAL(debug) << "Generating perimeters in parallel - end";
+
+    // Orca: brick layers raise alternate inner walls by half a layer; needs the walls of every layer.
+    BrickLayers::apply(*this);
+    m_print->throw_if_canceled();
 
     this->set_done(posPerimeters);
 }
@@ -1548,6 +1553,10 @@ bool PrintObject::invalidate_state_by_config_options(
             }
         } else if (
                opt_key == "wall_loops"
+            || opt_key == "brick_layers"
+            || opt_key == "brick_layers_first_wall"
+            || opt_key == "brick_layers_start_layer"
+            || opt_key == "brick_layers_flow_ratio"
             || opt_key == "alternate_extra_wall"
             || opt_key == "top_one_wall_type"
             || opt_key == "min_width_top_surface"

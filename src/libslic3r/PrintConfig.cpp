@@ -5937,6 +5937,50 @@ void PrintConfigDef::init_fff_params()
     def->set_default_value(new ConfigOptionBool(true));
 
     // Wave Overhangs
+    def = this->add("brick_layers", coBool);
+    def->label = L("Brick layers (Experimental)");
+    def->category = L("Strength");
+    def->tooltip = L("Raise every second inner wall by half a layer height, so that the walls of neighbouring layers "
+                     "interlock like bricks instead of stacking in planes. This makes the part stronger along Z.\n"
+                     "Where a raised wall starts (the first layer that has one) it is printed 1.5 layers tall, and "
+                     "where it ends (below a layer without one, such as the top surface) it is printed half a layer "
+                     "tall, both with matching flow, so the top and bottom stay flat. The outer wall is never "
+                     "raised. Raised walls are printed after the infill of their island.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("brick_layers_first_wall", coInt);
+    def->label = L("First raised wall");
+    def->category = L("Strength");
+    def->tooltip = L("The first wall that is raised, counted from the outer wall (1). Every second wall inwards from "
+                     "it is raised too: 2 raises walls 2, 4, 6..., 3 raises walls 3, 5, 7.... Needs at least this many "
+                     "walls.");
+    def->sidetext = "";
+    def->min = 2;
+    def->max = 100;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(2));
+
+    def = this->add("brick_layers_start_layer", coInt);
+    def->label = L("Start layer");
+    def->category = L("Strength");
+    def->tooltip = L("The first layer (counted from 1 at the bottom of the object) that may have raised walls. "
+                     "The first layer is never raised.");
+    def->min = 2;
+    def->max = 100000;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(2));
+
+    def = this->add("brick_layers_flow_ratio", coFloat);
+    def->label = L("Raised wall flow ratio");
+    def->category = L("Strength");
+    def->tooltip = L("Extra flow multiplier for raised walls, on top of the height compensation. A little more "
+                     "than 1 (e.g. 1.05) helps the raised beads fill the pockets between their neighbours.");
+    def->min = 0.5;
+    def->max = 2;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(1.));
+
     def = this->add("wave_overhangs", coBool);
     def->label = L("Use wave overhangs (Experimental)");
     def->category = L("Strength");

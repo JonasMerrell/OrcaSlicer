@@ -450,10 +450,12 @@ class ExtrusionMultiPath : public ExtrusionEntity
 {
 public:
     ExtrusionPaths paths;
+    // Orca: like ExtrusionLoop::print_after_infill, for open walls (brick layers raise them above the infill).
+    bool print_after_infill = false;
 
     ExtrusionMultiPath() {}
-    ExtrusionMultiPath(const ExtrusionMultiPath &rhs) : ExtrusionEntity(rhs), paths(rhs.paths), m_can_reverse(rhs.m_can_reverse) {}
-    ExtrusionMultiPath(ExtrusionMultiPath &&rhs) : ExtrusionEntity(rhs), paths(std::move(rhs.paths)), m_can_reverse(rhs.m_can_reverse) {}
+    ExtrusionMultiPath(const ExtrusionMultiPath &rhs) : ExtrusionEntity(rhs), paths(rhs.paths), print_after_infill(rhs.print_after_infill), m_can_reverse(rhs.m_can_reverse) {}
+    ExtrusionMultiPath(ExtrusionMultiPath &&rhs) : ExtrusionEntity(rhs), paths(std::move(rhs.paths)), print_after_infill(rhs.print_after_infill), m_can_reverse(rhs.m_can_reverse) {}
     ExtrusionMultiPath(const ExtrusionPaths &paths) : paths(paths) {}
     ExtrusionMultiPath(const ExtrusionPath &path) {this->paths.push_back(path); m_can_reverse = path.can_reverse(); }
 
@@ -462,6 +464,7 @@ public:
         this->paths     = rhs.paths;
         m_can_reverse   = rhs.m_can_reverse;
         this->inset_idx = rhs.inset_idx;
+        this->print_after_infill = rhs.print_after_infill;
         return *this;
     }
     ExtrusionMultiPath &operator=(ExtrusionMultiPath &&rhs)
@@ -469,6 +472,7 @@ public:
         this->paths     = std::move(rhs.paths);
         m_can_reverse   = rhs.m_can_reverse;
         this->inset_idx = rhs.inset_idx;
+        this->print_after_infill = rhs.print_after_infill;
         return *this;
     }
 
