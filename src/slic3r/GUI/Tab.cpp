@@ -5735,6 +5735,11 @@ void TabPrinter::build_fff()
         optgroup->append_single_option_line("extruder_clearance_dist_to_rod", "printer_basic_information_extruder_clearance#distance-to-rod");
         optgroup->append_single_option_line("extruder_clearance_height_to_rod", "printer_basic_information_extruder_clearance#height-to-rod");
         optgroup->append_single_option_line("extruder_clearance_height_to_lid", "printer_basic_information_extruder_clearance#height-to-lid");
+        // Fork: toolhead shape for non-planar collision checks.
+        optgroup->append_single_option_line("toolhead_clearance_enable");
+        optgroup->append_single_option_line("toolhead_clearance_profile");
+        optgroup->append_single_option_line("toolhead_clearance_mesh");
+        optgroup->append_single_option_line("toolhead_clearance_margin");
 
         optgroup = page->new_optgroup(L("Adaptive bed mesh"), "param_adaptive_mesh");
         optgroup->append_single_option_line("bed_mesh_min", "printer_basic_information_adaptive_bed_mesh#bed-mesh");

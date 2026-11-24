@@ -2103,6 +2103,11 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              extruder_clearance_height_to_lid))//BBS
     ((ConfigOptionFloat,              extruder_clearance_radius))
     ((ConfigOptionFloat,              nozzle_height))
+    // Fork: toolhead clearance for non-planar printing (Clearance/ToolheadClearance.hpp).
+    ((ConfigOptionBool,               toolhead_clearance_enable))
+    ((ConfigOptionPoints,             toolhead_clearance_profile))
+    ((ConfigOptionString,             toolhead_clearance_mesh))
+    ((ConfigOptionFloat,              toolhead_clearance_margin))
     ((ConfigOptionStrings,            extruder_colour))
     ((ConfigOptionPoints,             extruder_offset))
     ((ConfigOptionBools,              reduce_fan_stop_start_freq))
