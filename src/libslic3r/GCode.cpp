@@ -8630,13 +8630,17 @@ std::string GCode::change_layer(coordf_t print_z)
 
     m_need_change_layer_lift_z = true;
 
+    // Orca: staircase steps the previous layer reached are no longer above the nozzle. Steps at the
+    // new layer's height stay for this layer: its first travel still starts at the old height (the
+    // layer change rises along it) and must go over them.
+    const double prev_z = m_nominal_z;
+    m_staircase_layer_from_z = prev_z;
+    m_staircase_obstacles.erase(std::remove_if(m_staircase_obstacles.begin(), m_staircase_obstacles.end(),
+                                               [prev_z](const StaircaseObstacle &o) { return o.top_z <= prev_z + EPSILON; }),
+                                m_staircase_obstacles.end());
+
     m_nominal_z = z;
     m_writer.get_position().z() = z;
-
-    // Orca: staircase steps this layer has reached are no longer above the nozzle.
-    m_staircase_obstacles.erase(std::remove_if(m_staircase_obstacles.begin(), m_staircase_obstacles.end(),
-                                               [z](const StaircaseObstacle &o) { return o.top_z <= z + EPSILON; }),
-                                m_staircase_obstacles.end());
 
     // forget last wiping path as wiping after raising Z is pointless
     // BBS. Dont forget wiping path to reduce stringing.
@@ -11049,7 +11053,11 @@ std::string GCode::travel_to(const Point& point, ExtrusionRole role, std::string
     if (!m_staircase_obstacles.empty() && travel.size() >= 2) {
         const double target_z = z == DBL_MAX ? m_nominal_z : z;
         // Steps no higher than both ends are ordinary material at the travel's own height.
-        const double low_z    = std::min(m_writer.get_position().z() - m_writer.get_zhop(), target_z);
+        double       low_z    = std::min(m_writer.get_position().z() - m_writer.get_zhop(), target_z);
+        // The first travel of a layer still starts at the previous layer's height: change_layer()
+        // only moved the writer's Z on paper.
+        if (m_need_change_layer_lift_z)
+            low_z = std::min(low_z, m_staircase_layer_from_z);
         const double clear_z  = this->staircase_travel_clearance_z(travel, low_z);
         if (clear_z > target_z + EPSILON)
             gcode += m_writer.clearance_lift(clear_z, target_z, "wave staircase: clear the higher steps");

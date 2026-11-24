@@ -76,6 +76,41 @@ Polygons fill_area(const LayerRegion &layerm)
     return union_(out);
 }
 
+// Material printed at height z by every other instance on the plate (other objects, and the
+// other copies of this one), in this object's frame. Every instance of this object shares the
+// band, so each pairing counts. It is printed on the same layer as the band, before or after it,
+// so a step must keep clear of it as of this object's own later material.
+Polygons other_instances(const PrintObject &self, double z, const BoundingBox &near)
+{
+    Polygons out;
+    const Print *print = self.print();
+    if (print == nullptr)
+        return out;
+    for (const PrintObject *obj : print->objects()) {
+        for (const Layer *l : obj->layers()) {
+            if (l->print_z - l->height > z + EPSILON || l->print_z < z - EPSILON)
+                continue;
+            for (const PrintInstance &mine : self.instances())
+                for (const PrintInstance &theirs : obj->instances()) {
+                    if (obj == &self && &mine == &theirs)
+                        continue;
+                    const Point delta = theirs.shift - mine.shift;
+                    for (const ExPolygon &e : l->lslices) {
+                        BoundingBox b = get_extents(e);
+                        b.translate(delta);
+                        if (!b.overlap(near))
+                            continue;
+                        Polygons p = to_polygons(e);
+                        for (Polygon &g : p)
+                            g.translate(delta);
+                        polygons_append(out, std::move(p));
+                    }
+                }
+        }
+    }
+    return out;
+}
+
 } // namespace
 
 void apply(PrintObject &object)
@@ -158,6 +193,7 @@ void apply(PrintObject &object)
                 for (size_t s = 0; s < layer->lslices.size(); ++s)
                     if (int(s) != island_idx && layer->lslices_bboxes.size() > s && layer->lslices_bboxes[s].overlap(bb))
                         polygons_append(in.rest0, to_polygons(layer->lslices[s]));
+                polygons_append(in.rest0, other_instances(object, layer->print_z, bb));
                 if (ironing)
                     for (const Surface &s : layerm->fill_surfaces.surfaces)
                         if (s.surface_type == stTop)
@@ -171,6 +207,7 @@ void apply(PrintObject &object)
                     sl.dz     = ul->print_z - layer->print_z;
                     sl.fill   = fill_area(*ulm);
                     sl.slices = to_polygons(ul->lslices);
+                    polygons_append(sl.slices, other_instances(object, ul->print_z, bb));
                     sl.flow   = ulm->flow(frSolidInfill);
                     sl.angle  = float(Geometry::deg2rad(rc.solid_infill_direction.value + 90.));
                     in.steps.push_back(std::move(sl));

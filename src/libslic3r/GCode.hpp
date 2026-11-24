@@ -906,6 +906,7 @@ protected:
     };
     std::vector<StaircaseObstacle>      m_staircase_obstacles;
     double                              m_staircase_round_time = 0.;
+    double                              m_staircase_layer_from_z = 0.;  // nominal Z before the last layer change
     // Highest Z a travel along `travel` (print coordinates) must keep over steps higher than
     // above_z, -inf if none.
     double                              staircase_travel_clearance_z(const Polyline &travel, double above_z) const;
