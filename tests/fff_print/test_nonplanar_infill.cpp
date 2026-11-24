@@ -233,3 +233,37 @@ TEST_CASE("Non-planar combined infill takes its flow from the layer under the li
     for (const double e : waved)
         CHECK(e / level.front() == Catch::Approx(1.).epsilon(0.03));
 }
+
+TEST_CASE("Non-planar infill can be turned on for one object only", "[NonplanarInfill]")
+{
+    // Per-object settings (the GUI's object list, a 3MF's object config, the CLI's assemble list print_params) reach
+    // the region config of that object only.
+    Print print;
+    Model model;
+    const std::vector<std::vector<ConfigBase::SetDeserializeItem>> overrides = { { { "nonplanar_infill", "1" } }, {} };
+    init_print(std::vector<TriangleMesh>{ cube(20), cube(20) }, print, model, cube_config({}), &overrides);
+    print.process();
+    REQUIRE(print.objects().size() == 2);
+    auto waved_layers = [](const PrintObject &object) {
+        size_t n = 0;
+        for (const Layer *layer : object.layers())
+            for (const LayerRegion *layerm : layer->regions())
+                if (layerm->nonplanar_infill)
+                    ++n;
+        return n;
+    };
+    // Print holds its own copy of the model: tell the objects apart by their config.
+    size_t on = 0, off = 0;
+    for (const PrintObject *object : print.objects()) {
+        REQUIRE(object->num_printing_regions() == 1);
+        if (object->printing_region(0).config().nonplanar_infill.value) {
+            ++on;
+            CHECK(waved_layers(*object) > 0);
+        } else {
+            ++off;
+            CHECK(waved_layers(*object) == 0);
+        }
+    }
+    CHECK(on == 1);
+    CHECK(off == 1);
+}
