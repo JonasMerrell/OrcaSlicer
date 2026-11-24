@@ -3318,6 +3318,12 @@ void TabPrint::build()
         optgroup->append_single_option_line("detect_narrow_internal_solid_infill", "strength_settings_advanced#detect-narrow-internal-solid-infill");
         optgroup->append_single_option_line("ensure_vertical_shell_thickness", "strength_settings_advanced#ensure-vertical-shell-thickness");
 
+        optgroup = page->new_optgroup(L("Non-planar infill"), L"param_infill");
+        for (const char *key : { "nonplanar_infill", "nonplanar_infill_amplitude", "nonplanar_infill_wavelength",
+                                 "nonplanar_infill_pattern", "nonplanar_infill_angle", "nonplanar_infill_phase_shift",
+                                 "nonplanar_infill_blend_layers", "nonplanar_infill_edge_blend", "nonplanar_infill_max_dz" })
+            optgroup->append_single_option_line(key);
+
     page = add_options_page(L("Speed"), "custom-gcode_speed"); // ORCA: icon only visible on placeholders
         optgroup = page->new_optgroup(L("First layer speed"), L"param_speed_first", 15);
         optgroup->append_single_option_line("initial_layer_speed", "speed_settings_initial_layer_speed#initial-layer", 0);

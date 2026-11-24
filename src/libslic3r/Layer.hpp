@@ -9,6 +9,7 @@
 #include "Flow.hpp"
 #include "SurfaceCollection.hpp"
 #include "ExtrusionEntityCollection.hpp"
+#include <memory>
 #include <vector>
 #include <cstddef>
 #include <algorithm>
@@ -26,6 +27,7 @@ using ExPolygons = std::vector<ExPolygon>;
 class Layer;
 using LayerPtrs = std::vector<Layer*>;
 class LayerRegion;
+class NonplanarInfillField;
 using LayerRegionPtrs = std::vector<LayerRegion*>;
 class PrintRegion;
 class PrintRegionConfig;
@@ -88,6 +90,10 @@ public:
     // ordered collection of extrusion paths to fill surfaces
     // (this collection contains only ExtrusionEntityCollection objects)
     ExtrusionEntityCollection   fills;
+
+    // Orca: the wave the sparse infill of this region follows when nonplanar_infill is on (see NonplanarInfill.hpp).
+    // Set by PrintObject::contour_z(); also read while exporting G-code, to compensate the flow of the layer above.
+    std::shared_ptr<const NonplanarInfillField> nonplanar_infill;
 
     Flow    flow(FlowRole role) const;
     Flow    flow(FlowRole role, double layer_height) const;
@@ -244,6 +250,9 @@ public:
                                                     bool spiral_mode,
                                                     bool is_topmost_layer);
     void                    make_contour_z(const sla::IndexedMesh &mesh);
+    // Orca: the Z offset in mm that non-planar sparse infill of this layer has at a point of the object's frame, 0 where
+    // the layer is flat.
+    double                  nonplanar_infill_dz(const Point &p) const;
 
     void                    export_region_slices_to_svg(const char *path) const;
     void                    export_region_fill_surfaces_to_svg(const char *path) const;

@@ -16,6 +16,7 @@
 #include "Geometry.hpp"
 #include "I18N.hpp"
 #include "Layer.hpp"
+#include "NonplanarInfill.hpp"
 #include "MutablePolygon.hpp"
 #include "PerimeterGenerator.hpp"
 #include "PrintBase.hpp"
@@ -873,6 +874,9 @@ void PrintObject::infill()
                 for (size_t layer_idx = range.begin(); layer_idx < range.end(); ++ layer_idx) {
                     m_print->throw_if_canceled();
                     m_layers[layer_idx]->make_fills(&m_adaptive_fill_octrees, this->m_lightning_generator.get());
+                    // Orca: the fills are flat again; the non-planar infill wave, if any, is made again by contour_z().
+                    for (LayerRegion *layerm : m_layers[layer_idx]->regions())
+                        layerm->nonplanar_infill.reset();
                 }
             }
         );
@@ -914,11 +918,77 @@ bool PrintObject::need_z_contouring() const
 {
     size_t num_regions = this->num_printing_regions();
     for (size_t region_id = 0; region_id < num_regions; region_id++) {
-        if (this->printing_region(region_id).config().zaa_enabled)
+        const PrintRegionConfig &config = this->printing_region(region_id).config();
+        if (config.zaa_enabled || config.nonplanar_infill)
             return true;
     }
 
     return false;
+}
+
+bool PrintObject::need_zaa() const
+{
+    for (size_t region_id = 0; region_id < this->num_printing_regions(); ++region_id)
+        if (this->printing_region(region_id).config().zaa_enabled)
+            return true;
+    return false;
+}
+
+// Orca: bend the sparse infill into waves (see NonplanarInfill.hpp). Run after the infill and before the paths are
+// simplified, which leaves contoured paths alone.
+void PrintObject::make_nonplanar_infill()
+{
+    const size_t num_regions = this->num_printing_regions();
+    for (Layer *layer : m_layers)
+        for (LayerRegion *layerm : layer->regions())
+            layerm->nonplanar_infill.reset();
+
+    for (size_t region_id = 0; region_id < num_regions; ++region_id) {
+        const PrintRegionConfig &config = this->printing_region(region_id).config();
+        if (! config.nonplanar_infill)
+            continue;
+        const int blend = std::max(1, config.nonplanar_infill_blend_layers.value);
+        // Sparse infill area of each layer for this region. Void infill (the layers that combined infill skips) counts
+        // as sparse: the wave goes on through it.
+        std::vector<ExPolygons> sparse(m_layers.size());
+        tbb::parallel_for(tbb::blocked_range<size_t>(0, m_layers.size()), [&](const tbb::blocked_range<size_t> &range) {
+            for (size_t i = range.begin(); i < range.end(); ++i) {
+                if (region_id >= m_layers[i]->regions().size())
+                    continue;
+                const LayerRegion *layerm = m_layers[i]->get_region(int(region_id));
+                ExPolygons area;
+                for (const Surface &surface : layerm->fill_surfaces.surfaces)
+                    if (surface.surface_type == stInternal || surface.surface_type == stInternalVoid)
+                        area.emplace_back(surface.expolygon);
+                sparse[i] = union_ex(area);
+            }
+        });
+        m_print->throw_if_canceled();
+        tbb::parallel_for(tbb::blocked_range<size_t>(1, m_layers.size()), [&](const tbb::blocked_range<size_t> &range) {
+            for (size_t i = range.begin(); i < range.end(); ++i) {
+                m_print->throw_if_canceled();
+                if (region_id >= m_layers[i]->regions().size() || sparse[i].empty())
+                    continue;
+                Layer       *layer  = m_layers[i];
+                LayerRegion *layerm = layer->get_region(int(region_id));
+                std::vector<const ExPolygons *> stack(2 * blend + 1, nullptr);
+                for (int j = -blend; j <= blend; ++j) {
+                    const int idx = int(i) + j;
+                    // The first layer stays flat, and so the wave never reaches down to it.
+                    if (idx >= 1 && idx < int(m_layers.size()))
+                        stack[j + blend] = &sparse[idx];
+                }
+                auto field = std::make_shared<NonplanarInfillField>(NonplanarInfillWave::from_config(config, layer->height), i,
+                                                                    stack, blend, config.nonplanar_infill_edge_blend.value);
+                if (field->empty())
+                    continue;
+                nonplanar_infill_contour_collection(layerm->fills, *field,
+                                                    nonplanar_infill_segment_length(field->wave().wavelength));
+                layerm->nonplanar_infill = std::move(field);
+            }
+        });
+        m_print->throw_if_canceled();
+    }
 }
 
 void PrintObject::contour_z()
@@ -928,6 +998,14 @@ void PrintObject::contour_z()
     }
 
     m_print->set_status(40, L("Z contouring"));
+
+    // Orca: non-planar sparse infill does not need the mesh.
+    this->make_nonplanar_infill();
+    if (! this->need_zaa()) {
+        this->set_done(posContouring);
+        return;
+    }
+
     BOOST_LOG_TRIVIAL(debug) << "Contouring in parallel - start";
 
     TriangleMesh mesh = this->m_model_object->raw_mesh();
@@ -1756,7 +1834,17 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "small_area_infill_flow_compensation"
             || opt_key == "lateral_lattice_angle_1"
             || opt_key == "lateral_lattice_angle_2"
-            || opt_key == "infill_overhang_angle") {
+            || opt_key == "infill_overhang_angle"
+            // Orca: the waves are put on the infill paths in place, so the paths are made again flat first.
+            || opt_key == "nonplanar_infill"
+            || opt_key == "nonplanar_infill_amplitude"
+            || opt_key == "nonplanar_infill_wavelength"
+            || opt_key == "nonplanar_infill_phase_shift"
+            || opt_key == "nonplanar_infill_angle"
+            || opt_key == "nonplanar_infill_pattern"
+            || opt_key == "nonplanar_infill_blend_layers"
+            || opt_key == "nonplanar_infill_edge_blend"
+            || opt_key == "nonplanar_infill_max_dz") {
             steps.emplace_back(posInfill);
         } else if (opt_key == "sparse_infill_pattern"
                    || opt_key == "adaptive_infill_mode"

@@ -1557,6 +1557,9 @@ static std::vector<std::string> s_Preset_print_options{
     "zaa_minimize_perimeter_height",
     "zaa_dont_alternate_fill_direction",
     "zaa_min_z",
+    "nonplanar_infill", "nonplanar_infill_amplitude", "nonplanar_infill_wavelength", "nonplanar_infill_phase_shift",
+    "nonplanar_infill_angle", "nonplanar_infill_pattern", "nonplanar_infill_blend_layers", "nonplanar_infill_edge_blend",
+    "nonplanar_infill_max_dz",
     "ironing_expansion",
 };
 
