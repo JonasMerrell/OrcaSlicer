@@ -9422,8 +9422,13 @@ double GCode::z_contoured_extrusion_ratio(const ExtrusionPath &path, const Point
         return 1.;
     const double z_diff = unscale_(point.z());
     if (path.role() == erInternalInfill && m_config.nonplanar_infill.value) {
-        const double below = (m_layer != nullptr && m_layer->lower_layer != nullptr) ?
-            m_layer->lower_layer->nonplanar_infill_dz(point.to_point()) : 0.;
+        // The layer the line is printed onto: the one right below, or for combined infill (a line several layers
+        // tall) the one under the line's bottom.
+        const Layer *below_layer = m_layer != nullptr ? m_layer->lower_layer : nullptr;
+        while (below_layer != nullptr && below_layer->lower_layer != nullptr &&
+               below_layer->print_z > m_layer->print_z - path.height + EPSILON)
+            below_layer = below_layer->lower_layer;
+        const double below = below_layer != nullptr ? below_layer->nonplanar_infill_dz(point.to_point()) : 0.;
         return nonplanar_infill_extrusion_ratio(path.height, z_diff, below);
     }
     return (path.height + z_diff) / path.height;

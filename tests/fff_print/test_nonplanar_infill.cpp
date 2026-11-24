@@ -202,3 +202,34 @@ TEST_CASE("Non-planar infill marks sparse infill paths as Z contoured on the lay
         for (const LayerRegion *layerm : layer->regions())
             CHECK_FALSE(layerm->nonplanar_infill);
 }
+
+TEST_CASE("Non-planar combined infill takes its flow from the layer under the line's bottom", "[NonplanarInfill]")
+{
+    // Infill combined over two layers with the wave turned 180 degrees per layer: each combined line lies on the line
+    // two layers down, which has the same wave, so the gap stays the layer height everywhere. The skipped layer in
+    // between (half a turn off) must not count.
+    const std::vector<Move> moves = extrusion_moves(slice({ cube(20) }, cube_config({ { "nonplanar_infill", "1" },
+                                                                                      { "nonplanar_infill_amplitude", "0.05" },
+                                                                                      { "nonplanar_infill_wavelength", "8" },
+                                                                                      { "nonplanar_infill_phase_shift", "180" },
+                                                                                      { "infill_combination", "1" } })));
+    std::vector<double> layers;
+    for (const Move &m : moves)
+        if (is_sparse(m) && (layers.empty() || layers.back() != m.layer_z))
+            layers.push_back(m.layer_z);
+    REQUIRE(layers.size() >= 6);
+    // Combined: sparse infill on every other layer only.
+    CHECK_THAT(layers[layers.size() / 2 + 1] - layers[layers.size() / 2], Catch::Matchers::WithinAbs(0.4, 1e-4));
+    const double mid = layers[layers.size() / 2];
+    std::vector<double> waved, level;
+    for (const Move &m : moves) {
+        if (! is_sparse(m) || std::abs(m.layer_z - mid) > 1e-4 || m.length < 0.3)
+            continue;
+        const double dz = m.z - m.layer_z;
+        (std::abs(dz) > 0.04 ? waved : level).push_back(m.e / m.length);
+    }
+    REQUIRE(! waved.empty());
+    REQUIRE(! level.empty());
+    for (const double e : waved)
+        CHECK(e / level.front() == Catch::Approx(1.).epsilon(0.03));
+}
