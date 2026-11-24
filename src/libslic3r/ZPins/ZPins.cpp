@@ -211,13 +211,14 @@ bool z_pin_clip_inner_extrusions(ExtrusionEntityCollection &collection, const Ex
             continue;
         }
         any = true;
-        for (ExtrusionEntity *piece : pieces->entities)
+        // The pieces take the wall's place, in order and flat: G-code expects the extrusions of an
+        // island's walls to be loops and paths, not nested collections.
+        for (ExtrusionEntity *piece : pieces->entities) {
             piece->inset_idx = ee->inset_idx;
-        // Keep the pieces in their original order: they still are the same wall.
-        pieces->no_sort = true;
+            result.emplace_back(piece);
+        }
+        pieces->entities.clear();
         delete ee;
-        if (! pieces->entities.empty())
-            result.emplace_back(pieces.release());
     }
     collection.entities = std::move(result);
     return any;

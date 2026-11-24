@@ -2,6 +2,8 @@
 #include <catch2/catch_approx.hpp>
 
 #include <cmath>
+#include <cstdlib>
+#include <fstream>
 #include <map>
 #include <regex>
 #include <sstream>
@@ -43,7 +45,8 @@ std::vector<Injection> injections(const std::string &gcode)
         if (std::regex_search(line, m, z_re))
             z = std::stod(m[1]);
         if (std::regex_search(line, m, re)) {
-            out.push_back({ std::stod(m[1]), std::stod(m[2]), z, std::stod(m[3]), std::stod(m[4]), 0. });
+            // The nozzle waits z_pin_injection_height (0.1 mm default) above the layer it fills.
+            out.push_back({ std::stod(m[1]), std::stod(m[2]), z - 0.1, std::stod(m[3]), std::stod(m[4]), 0. });
             cur = &out.back();
             continue;
         }
@@ -51,7 +54,7 @@ std::vector<Injection> injections(const std::string &gcode)
             continue;
         if (line.rfind("G1 X", 0) == 0 && std::regex_search(line, m, e_re) && std::stod(m[1]) > 0)
             cur->e += std::stod(m[1]);
-        else if (line.rfind("G1 F", 0) == 0 || line.empty() || line[0] == ';' || line.rfind("G4", 0) == 0)
+        else if (line.rfind("G1 F", 0) == 0 || line.empty() || line[0] == ';' || line[0] == 'M' || line.rfind("G4", 0) == 0)
             ;
         else
             cur = nullptr;
@@ -94,6 +97,8 @@ TEST_CASE("Z-pins inject aligned channels with the planned volume", "[ZPins]")
     init_print({ TriangleMesh(its_make_cube(20, 20, 10)) }, print, model, config);
     GCodeProcessorResult result;
     const std::string    gc = Slic3r::Test::gcode(print, &result);
+    if (const char *dump = std::getenv("ZPIN_TEST_DUMP"))
+        std::ofstream(dump) << gc;
     const std::vector<Injection> inj = injections(gc);
     REQUIRE(! inj.empty());
 
@@ -104,6 +109,7 @@ TEST_CASE("Z-pins inject aligned channels with the planned volume", "[ZPins]")
     std::map<std::pair<long, long>, std::vector<const Injection*>> by_xy;
     for (const Injection &i : inj) {
         CHECK(i.volume == Catch::Approx(area * i.depth * 1.1).epsilon(0.01));
+        INFO("injection at " << i.x << "," << i.y << " z " << i.z << " depth " << i.depth << " e " << i.e);
         CHECK(i.e * cross == Catch::Approx(i.volume).epsilon(0.02));
         // At most interval + 1 layers deep, never fewer than 2.
         CHECK(i.depth <= 9 * h + 1e-6);
@@ -139,4 +145,24 @@ TEST_CASE("Z-pins inject aligned channels with the planned volume", "[ZPins]")
                                                                                              result_off.print_statistics.total_volumes_per_extruder.begin()->second;
     INFO("on " << vol_on << " off " << vol_off << " injected " << injected);
     CHECK(vol_on > vol_off + 0.5 * injected);
+}
+
+TEST_CASE("Z-pins through inner walls slice and add pins the infill alone has no room for", "[ZPins]")
+{
+    // Eight walls (~3.5 mm) leave the pins 6 mm off centre no room in the infill, only in the walls.
+    auto count = [](bool in_walls) {
+        DynamicPrintConfig config = pin_config(true);
+        config.set_deserialize_strict({ { "wall_loops", "8" }, { "z_pin_in_inner_walls", in_walls ? "1" : "0" } });
+        Print print;
+        Model model;
+        init_print({ TriangleMesh(its_make_cube(20, 20, 10)) }, print, model, config);
+        std::map<std::pair<long, long>, int> pins;
+        for (const Injection &i : injections(Slic3r::Test::gcode(print)))
+            ++ pins[{ std::lround(i.x * 100), std::lround(i.y * 100) }];
+        return pins.size();
+    };
+    const size_t infill_only = count(false);
+    const size_t with_walls  = count(true);
+    INFO("infill only " << infill_only << ", with walls " << with_walls);
+    CHECK(with_walls > infill_only);
 }

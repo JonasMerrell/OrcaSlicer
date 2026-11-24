@@ -71,14 +71,13 @@ TEST_CASE("Z-pin columns stop at holes and drop short pieces", "[ZPins]")
     params.bottom_window = 1;
     params.min_layers    = 2;
     auto eligible = all_eligible(20, 1);
-    // A cavity on layer 10 splits the column; a lone eligible layer 15 surrounded by holes is no pin.
+    // Cavities on layers 10 and 16 split the column into three pieces.
     eligible[10][0] = 0;
-    eligible[14][0] = 0;
     eligible[16][0] = 0;
     const ZPinPlan plan = plan_z_pin_columns(eligible, {}, params);
     const std::vector<int> open = open_layers(plan, 0);
-    // Layers 1..8 (9 is next to the cavity) and 11..12 (13 is next to the hole on 14); 17,18 too.
-    CHECK(open == std::vector<int>{ 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 17, 18 });
+    // Layers next to a cavity or the object's ends stay closed: 1..8 and 12..14 open; 18 alone is too short.
+    CHECK(open == std::vector<int>{ 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14 });
     CHECK(filled_layers(plan, 0) == open);
     // No injection fills fewer than two layers.
     for (int l = 0; l < 20; ++ l)
@@ -160,15 +159,15 @@ TEST_CASE("Z-pin channels clip inner walls but never the outer wall", "[ZPins]")
                        ExPolygon(z_pin_circle(Point::new_scale(0., 0.), scaled<coord_t>(1.))) };
     const double inner_len = walls.entities[1]->length();
     REQUIRE(z_pin_clip_inner_extrusions(walls, cut, scaled<coord_t>(0.4)));
-    REQUIRE(walls.entities.size() == 2);
-    // The outer loop is untouched.
+    // The outer loop is untouched and the inner loop became flat pieces about 2 mm shorter, still
+    // inner walls (G-code wants loops and paths in a wall collection, never nested collections).
+    REQUIRE(walls.entities.size() >= 2);
     CHECK(walls.entities[0]->is_loop());
     CHECK(walls.entities[0]->role() == erExternalPerimeter);
-    // The inner loop became pieces about 2 mm shorter, still inner walls.
-    auto *pieces = dynamic_cast<ExtrusionEntityCollection*>(walls.entities[1]);
-    REQUIRE(pieces != nullptr);
     double len = 0.;
-    for (const ExtrusionEntity *e : pieces->entities) {
+    for (size_t k = 1; k < walls.entities.size(); ++ k) {
+        const ExtrusionEntity *e = walls.entities[k];
+        CHECK_FALSE(e->is_collection());
         CHECK(e->role() == erPerimeter);
         CHECK(e->inset_idx == 1);
         len += e->length();

@@ -12211,7 +12211,8 @@ std::string GCode::extrude_z_pins(const Layer &layer)
                               m_writer.filament()->filament_crossection();
     const double z_inject   = m_nominal_z + std::max(0., oc.z_pin_injection_height.value);
     const int    dwell_ms   = int(std::round(std::max(0., oc.z_pin_dwell.value) * 1000.));
-    constexpr int seg_per_lap = 12;
+    constexpr int    seg_per_lap  = 12;
+    constexpr double max_xy_speed = 25.; // mm/s around a sub-millimetre circle
 
     // Shortest tour from where the nozzle is.
     Points centres;
@@ -12231,11 +12232,13 @@ std::string GCode::extrude_z_pins(const Layer &layer)
             continue;
         const Vec2d  c       = unscale(inj.pos);
         const double lap     = 2. * M_PI * rc;
+        // Enough laps to stay under the cross-section limit; the circling speed is capped, so a very high
+        // flow is lowered to what that path allows (still a fraction of a second per pin).
         const int    laps    = std::max(1, int(std::ceil(inj.volume / (max_area * lap))));
         const int    n_seg   = laps * seg_per_lap;
         const double seg_len = lap / seg_per_lap;
-        const double t       = inj.volume / flow;                       // s
-        const double F       = std::max(1., n_seg * seg_len / t * 60.); // mm/min
+        const double t       = std::max(inj.volume / flow, n_seg * seg_len / max_xy_speed); // s
+        const double F       = std::max(1., n_seg * seg_len / t * 60.);                    // mm/min
         const double dE      = inj.volume * e_per_mm3 / n_seg;
         auto on_circle = [&](int i) {
             const double a = 2. * M_PI * double(i) / seg_per_lap;
@@ -12277,6 +12280,8 @@ std::string GCode::extrude_z_pins(const Layer &layer)
         this->set_last_pos(wipe_path.points.back());
         wipe_path.reverse();
         m_wipe.path = std::move(wipe_path);
+        // Always retract (and wipe, if enabled) before leaving the pin: the melt is under pressure.
+        gcode += this->retract(false, false, LiftType::NormalLift);
     }
     // The next path resets Z to the layer (see _extrude_piece) after its travel.
     return gcode;

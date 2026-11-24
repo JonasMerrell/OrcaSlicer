@@ -42,8 +42,11 @@ orca-slice part.stl --set z_pins=1 --set z_pin_diameter=1.5 --set z_pin_interval
    joins them. The outer wall is never cut.
 5. **Injection.** After printing the layer of a fill, the nozzle goes to each due channel and stops
    `z_pin_injection_height` above the top of that layer. It extrudes `π r² × open depth × overfill` while
-   circling slowly inside the channel, then optionally dwells. The next travel retracts and wipes as
-   usual. The injection is inside the object's EXCLUDE_OBJECT block.
+   circling inside the channel, optionally dwells, then always retracts (and wipes along the circle when
+   wipe is on). The injection is inside the object's EXCLUDE_OBJECT block.
+   - The flow is `z_pin_injection_speed`, capped by the filament's max volumetric speed. The circle is
+     run at no more than 25 mm/s, which can lower a very high flow. With a 0.5 mm nozzle, 1.5 mm
+     channels and 2 mm fills, that works out to 0.15–0.22 s per pin at 12–16 mm³/s.
    - The injection circles, rather than extruding in place, because the G-code processor counts only
      moves with XY motion as extrusion. That way the preview, the time estimate and the filament
      estimate all include the pins (they show as sparse infill).
@@ -81,6 +84,8 @@ Each injection is marked in the G-code:
 ## Limits
 
 - Pins are object settings: a height range modifier can't switch them on for part of an object.
+  To compare pinned and plain parts on one plate, set `z_pins` per object (object settings in the GUI,
+  or `<metadata key="z_pins" value="1"/>` on the object in a 3MF's `Metadata/model_settings.config`).
 - The nozzle stays above the layer, so the channels must be wide enough for the melt to fall in.
   Narrow, deep channels bridge over and leave voids (Duty et al.). Use about 3× the line width and
   intervals of 2–3 mm.
