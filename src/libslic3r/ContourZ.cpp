@@ -9,6 +9,7 @@
 #include "libslic3r.h"
 #include <Eigen/Core>
 #include <cfloat>
+#include <algorithm>
 #include <cmath>
 #include <initializer_list>
 #include <math.h>
@@ -37,6 +38,31 @@ static double slope_from_normal(const Eigen::Vector3d& normal)
 	return angle_rad;
 }
 
+// Orca: which features the region lets Z contouring move (zaa_top_surfaces, zaa_outer_walls, zaa_inner_walls).
+bool zaa_contours_role(const PrintRegionConfig &config, ExtrusionRole role)
+{
+    switch (role) {
+    case erTopSolidInfill:
+    case erIroning:           return config.zaa_top_surfaces.value;
+    case erExternalPerimeter: return config.zaa_outer_walls.value;
+    case erPerimeter:         return config.zaa_inner_walls.value;
+    default:                  return false;
+    }
+}
+
+// Orca: how far contouring may move the nozzle from the layer's nominal Z, up or down. Never more than
+// one layer height: the toolhead (a Beacon probe ~1.1 mm above the nozzle tip on SimpleCore) then keeps
+// the clearance it has when printing planar. zaa_max_dz tightens it further; 0 leaves the layer height.
+// TODO: once Slic3r::Clearance (branch claude/nonplanar-clearance) is implemented, also clamp each point
+// to ClearanceChecker::check_path()'s min_z. Build the checker serially in PrintObject::contour_z() before
+// the parallel loop (it is read-only afterwards), from lslices (PrintedVolume::add_layers_below, or the
+// planned per-band add_layers_between), not from contoured paths.
+double zaa_max_dz(const PrintRegionConfig &config, double layer_height)
+{
+    const double limit = config.zaa_max_dz.value;
+    return limit > 0. ? std::min(limit, layer_height) : layer_height;
+}
+
 static bool contour_extrusion_path(LayerRegion *region, const sla::IndexedMesh &mesh, ExtrusionPath &path)
 {
     if (path.role() != erTopSolidInfill && path.role() != erIroning && path.role() != erExternalPerimeter && path.role() != erPerimeter) {
@@ -46,6 +72,11 @@ static bool contour_extrusion_path(LayerRegion *region, const sla::IndexedMesh &
 	Layer *layer = region->layer();
 	coordf_t mesh_slice_z = layer->slice_z + mesh.ground_level();
 	coordf_t min_z = region->region().config().zaa_min_z;
+	const PrintRegionConfig &zaa_config = region->region().config();
+	if (!zaa_contours_role(zaa_config, path.role()))
+		return false;
+	const double max_dz          = zaa_max_dz(zaa_config, layer->height);
+	const double min_slope_deg   = zaa_config.zaa_min_slope.value;
 
 	const Points3 &points = path.polyline.points;
 	double resolution_mm = 0.1;
@@ -120,6 +151,12 @@ static bool contour_extrusion_path(LayerRegion *region, const sla::IndexedMesh &
             } else if (d > max_up) {
                 d = max_up;
             }
+
+            // Orca: flat areas stay at the nominal height when a minimum slope is set.
+            if (min_slope_deg > 0 && hit_up.is_hit() && slope_from_normal(hit_up.normal()) * 180.0 / M_PI < min_slope_deg)
+                d = 0;
+            // Orca: hard cap on the Z travel, at most one layer height (see zaa_max_dz()).
+            d = std::clamp(d, -max_dz, max_dz);
 
             if (is_perimeter(path.role()) && d > 0) {
                 // do not increase height of perimeters as this may create an appearance of a seam

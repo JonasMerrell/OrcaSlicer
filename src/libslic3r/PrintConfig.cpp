@@ -5314,6 +5314,52 @@ void PrintConfigDef::init_fff_params()
     def->mode     = comExpert;
     def->set_default_value(new ConfigOptionFloat(0.05));
 
+    def = this->add("zaa_max_dz", coFloat);
+    def->label    = L("Maximum Z deviation");
+    def->category = L("Quality");
+    def->tooltip  = L("The farthest Z contouring may move the nozzle away from the layer's nominal height, up or down.\n"
+                      "It is never more than one layer height, whatever this is set to, so the nozzle stays inside "
+                      "the layer it prints and the toolhead keeps the clearance of planar printing.\n"
+                      "Set to 0 to allow a full layer height.");
+    def->sidetext = L("mm");	// millimeters, CIS languages need translation
+    def->min      = 0;
+    def->max      = 10;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("zaa_min_slope", coFloat);
+    def->label    = L("Minimum slope");
+    def->category = L("Quality");
+    def->tooltip  = L("Only contour where the model surface is at least this steep (degrees from horizontal). "
+                      "Flatter areas are printed at the layer's nominal height.\n"
+                      "Set to 0 to contour every top surface.");
+    def->sidetext = u8"°";	// degrees, don't need translation
+    def->min      = 0;
+    def->max      = 90;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("zaa_top_surfaces", coBool);
+    def->label    = L("Contour top surfaces");
+    def->category = L("Quality");
+    def->tooltip  = L("Contour top surface infill and ironing.");
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("zaa_outer_walls", coBool);
+    def->label    = L("Contour outer walls");
+    def->category = L("Quality");
+    def->tooltip  = L("Lower outer walls under a sloped top surface to the model surface.");
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("zaa_inner_walls", coBool);
+    def->label    = L("Contour inner walls");
+    def->category = L("Quality");
+    def->tooltip  = L("Lower inner walls under a sloped top surface to the model surface.");
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionBool(true));
+
     def = this->add("layer_change_gcode", coString);
     def->label = L("Layer change G-code");
     def->tooltip = L("This G-code is inserted at every layer change after the Z lift.");

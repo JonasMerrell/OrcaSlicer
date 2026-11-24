@@ -134,6 +134,13 @@ private:
     const PrintRegion *m_region;
 };
 
+class PrintRegionConfig;
+// Orca: Z contouring limits (ContourZ.cpp), exposed for the tests.
+// Whether the region's zaa_top_surfaces / zaa_outer_walls / zaa_inner_walls let contouring move a path of this role.
+bool   zaa_contours_role(const PrintRegionConfig &config, ExtrusionRole role);
+// The farthest contouring may move the nozzle from the layer's nominal Z: zaa_max_dz, never more than one layer.
+double zaa_max_dz(const PrintRegionConfig &config, double layer_height);
+
 class Layer
 {
 public:

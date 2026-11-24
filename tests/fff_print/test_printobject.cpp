@@ -32,6 +32,8 @@
 #include "libslic3r/ExtrusionEntity.hpp"
 #include "libslic3r/BoundingBox.hpp"
 #include <functional>
+#include <sstream>
+#include <boost/algorithm/string/predicate.hpp>
 #include <map>
 #include <set>
 #include <string>
@@ -772,4 +774,201 @@ TEST_CASE("Z contouring follows the surface of each instance as it is turned", "
         CHECK(matched > 100);
         CHECK(lifted > 0);
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Orca: Z contouring limits and feature switches (zaa_max_dz, zaa_min_slope, zaa_top_surfaces,
+// zaa_outer_walls, zaa_inner_walls).
+
+// A 20 x 20 x 10 box tilted about X by tilt_deg, so its top slopes along Y, sliced with Z contouring on
+// plus the given settings. Keep the tilt shallow: at 0.2 mm layers a 15 degree slope exposes only ~0.75 mm
+// per layer, which the walls cover, so no top infill is left to contour.
+static void slice_tilted_box(double tilt_deg, std::initializer_list<ConfigBase::SetDeserializeItem> items, Print &print, Model &model)
+{
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_deserialize_strict({ { "zaa_enabled", "1" }, { "layer_height", "0.2" }, { "initial_layer_print_height", "0.2" } });
+    config.set_deserialize_strict(items);
+    TriangleMesh box = make_cube(20, 20, 10);
+    box.rotate_x(float(tilt_deg * PI / 180.));
+    init_print({ std::move(box) }, print, model, config);
+    print.process();
+}
+
+struct ContouredRole { size_t paths = 0; coord_t max_abs_dz = 0; };
+
+// Per role, how many paths contouring moved and the largest Z offset it gave any of their points.
+static std::map<ExtrusionRole, ContouredRole> contoured_by_role(const PrintObject &object)
+{
+    std::map<ExtrusionRole, ContouredRole> out;
+    std::function<void(const ExtrusionEntity &)> visit = [&](const ExtrusionEntity &entity) {
+        if (const auto *path = dynamic_cast<const ExtrusionPath *>(&entity)) {
+            if (!path->z_contoured)
+                return;
+            ContouredRole &r = out[path->role()];
+            ++r.paths;
+            for (const Point3 &pt : path->polyline.points)
+                r.max_abs_dz = std::max(r.max_abs_dz, std::abs(pt.z()));
+        } else if (const auto *multipath = dynamic_cast<const ExtrusionMultiPath *>(&entity)) {
+            for (const ExtrusionPath &p : multipath->paths) visit(p);
+        } else if (const auto *loop = dynamic_cast<const ExtrusionLoop *>(&entity)) {
+            for (const ExtrusionPath &p : loop->paths) visit(p);
+        } else if (const auto *collection = dynamic_cast<const ExtrusionEntityCollection *>(&entity)) {
+            for (const ExtrusionEntity *child : collection->entities) visit(*child);
+        }
+    };
+    for (const Layer *layer : object.layers())
+        for (const LayerRegion *region : layer->regions()) {
+            visit(region->perimeters);
+            visit(region->fills);
+        }
+    return out;
+}
+
+TEST_CASE("Z contouring limit and feature helpers", "[PrintObject][ZAA]")
+{
+    PrintRegionConfig config;
+    CHECK(zaa_contours_role(config, erTopSolidInfill));
+    CHECK(zaa_contours_role(config, erIroning));
+    CHECK(zaa_contours_role(config, erExternalPerimeter));
+    CHECK(zaa_contours_role(config, erPerimeter));
+    CHECK_FALSE(zaa_contours_role(config, erSolidInfill));
+    CHECK_FALSE(zaa_contours_role(config, erInternalInfill));
+    CHECK_FALSE(zaa_contours_role(config, erOverhangPerimeter));
+
+    // 0 means one layer height, and no setting goes past one layer.
+    CHECK(zaa_max_dz(config, 0.2) == Catch::Approx(0.2));
+    config.zaa_max_dz.value = 0.08;
+    CHECK(zaa_max_dz(config, 0.2) == Catch::Approx(0.08));
+    config.zaa_max_dz.value = 0.5;
+    CHECK(zaa_max_dz(config, 0.2) == Catch::Approx(0.2));
+
+    config.zaa_outer_walls.value = false;
+    CHECK_FALSE(zaa_contours_role(config, erExternalPerimeter));
+    CHECK(zaa_contours_role(config, erPerimeter));
+}
+
+TEST_CASE("Z contouring is off by default", "[PrintObject][ZAA]")
+{
+    Print print;
+    Model model;
+    slice_tilted_box(5., { { "zaa_enabled", "0" } }, print, model);
+    CHECK(contoured_by_role(*print.objects().front()).empty());
+}
+
+TEST_CASE("Z contouring never moves a point more than one layer, or more than zaa_max_dz", "[PrintObject][ZAA]")
+{
+    {
+        Print print;
+        Model model;
+        slice_tilted_box(5., {}, print, model);
+        const auto roles = contoured_by_role(*print.objects().front());
+        REQUIRE(roles.count(erTopSolidInfill));
+        coord_t max_dz = 0;
+        for (const auto &[role, r] : roles)
+            max_dz = std::max(max_dz, r.max_abs_dz);
+        CHECK(max_dz <= scaled(0.2) + 1);
+        // Without a tighter limit the walls go deeper than the 0.05 mm tested below.
+        CHECK(max_dz > scaled(0.05) + 1);
+    }
+    {
+        Print print;
+        Model model;
+        slice_tilted_box(5., { { "zaa_max_dz", "0.05" } }, print, model);
+        const auto roles = contoured_by_role(*print.objects().front());
+        REQUIRE(roles.count(erTopSolidInfill));
+        for (const auto &[role, r] : roles) {
+            INFO("role " << int(role));
+            CHECK(r.max_abs_dz <= scaled(0.05) + 1);
+        }
+    }
+}
+
+TEST_CASE("Z contouring moves only the features it is set to", "[PrintObject][ZAA]")
+{
+    Print print;
+    Model model;
+    slice_tilted_box(5., {}, print, model);
+    auto roles = contoured_by_role(*print.objects().front());
+    CHECK(roles.count(erTopSolidInfill));
+    CHECK(roles.count(erExternalPerimeter));
+
+    Print walls_off;
+    Model walls_off_model;
+    slice_tilted_box(5., { { "zaa_outer_walls", "0" }, { "zaa_inner_walls", "0" } }, walls_off, walls_off_model);
+    roles = contoured_by_role(*walls_off.objects().front());
+    CHECK(roles.count(erTopSolidInfill));
+    CHECK_FALSE(roles.count(erExternalPerimeter));
+    CHECK_FALSE(roles.count(erPerimeter));
+
+    Print top_off;
+    Model top_off_model;
+    slice_tilted_box(5., { { "zaa_top_surfaces", "0" } }, top_off, top_off_model);
+    roles = contoured_by_role(*top_off.objects().front());
+    CHECK_FALSE(roles.count(erTopSolidInfill));
+    CHECK(roles.count(erExternalPerimeter));
+}
+
+TEST_CASE("Z contouring leaves surfaces flatter than zaa_min_slope planar", "[PrintObject][ZAA]")
+{
+    // The box top slopes 5 degrees.
+    Print steep_enough;
+    Model steep_enough_model;
+    slice_tilted_box(5., { { "zaa_min_slope", "3" } }, steep_enough, steep_enough_model);
+    CHECK(contoured_by_role(*steep_enough.objects().front()).count(erTopSolidInfill));
+
+    Print too_flat;
+    Model too_flat_model;
+    slice_tilted_box(5., { { "zaa_min_slope", "10" } }, too_flat, too_flat_model);
+    CHECK(contoured_by_role(*too_flat.objects().front()).empty());
+}
+
+TEST_CASE("Z contoured G-code stays in its layer and scales flow with the local layer thickness", "[PrintObject][ZAA]")
+{
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_deserialize_strict({ { "zaa_enabled", "1" }, { "layer_height", "0.2" }, { "initial_layer_print_height", "0.2" },
+                                    { "gcode_comments", "0" }, { "enable_arc_fitting", "0" }, { "use_relative_e_distances", "1" } });
+    TriangleMesh box = make_cube(20, 20, 10);
+    box.rotate_x(float(5. * PI / 180.));
+    const std::string gcode = Test::slice({ std::move(box) }, config);
+    REQUIRE(!gcode.empty());
+
+    const double h = 0.2, min_z = config.opt_float("zaa_min_z");
+    double layer_z = 0, x = 0, y = 0, z = 0;
+    std::string type;
+    size_t extrusions = 0, off_plane = 0;
+    std::vector<double> top_k; // E / (length * local thickness) of top surface moves
+    std::istringstream in(gcode);
+    for (std::string line; std::getline(in, line);) {
+        if (boost::starts_with(line, ";Z:")) { layer_z = std::stod(line.substr(3)); continue; }
+        if (boost::starts_with(line, ";TYPE:")) { type = line.substr(6); continue; }
+        if (!boost::starts_with(line, "G1 "))
+            continue;
+        double nx = x, ny = y, nz = z, e = 0;
+        std::istringstream words(line.substr(0, line.find(';')));
+        for (std::string w; words >> w;) {
+            const double v = w.size() > 1 ? std::atof(w.c_str() + 1) : 0;
+            switch (w[0]) { case 'X': nx = v; break; case 'Y': ny = v; break; case 'Z': nz = v; break; case 'E': e = v; break; default: break; }
+        }
+        const double length = std::hypot(nx - x, ny - y);
+        if (e > 0 && length > 0) {
+            ++extrusions;
+            INFO(line << " at layer " << layer_z);
+            // Inside its own layer: no lower than the layer below's top, no higher than zaa_min_z above.
+            CHECK(nz >= layer_z - h - 1e-3);
+            CHECK(nz <= layer_z + min_z + 1e-3);
+            if (std::abs(nz - layer_z) > 1e-3)
+                ++off_plane;
+            if (type == "Top surface" && length > 0.3)
+                top_k.push_back(e / (length * (nz - (layer_z - h))));
+        }
+        x = nx; y = ny; z = nz;
+    }
+    CHECK(extrusions > 100);
+    CHECK(off_plane > 10);
+    REQUIRE(top_k.size() > 10);
+    std::sort(top_k.begin(), top_k.end());
+    const double median = top_k[top_k.size() / 2];
+    size_t within = std::count_if(top_k.begin(), top_k.end(), [median](double k) { return std::abs(k / median - 1.) < 0.05; });
+    // Almost every top surface move puts down filament in proportion to the thickness under it.
+    CHECK(double(within) / double(top_k.size()) > 0.9);
 }
