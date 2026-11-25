@@ -105,6 +105,10 @@ public:
     // This includes an existing lift or a pending lazy lift.
     std::pair<double, double> planned_travel_z(const Vec3d &point, bool force_z = false) const;
     std::string travel_to_z(double z, const std::string &comment = std::string(), bool force = false);
+    // Orca: staircase wave overhangs. Raise to at least z_clear now (merging a pending lazy lift) and
+    // treat it as a lift above z_target, so the next travel keeps the height over XY and comes
+    // down only at its destination.
+    std::string clearance_lift(double z_clear, double z_target, const std::string &comment = std::string());
     bool        will_move_z(double z) const;
     std::string extrude_to_xy(const Vec2d &point, double dE, const std::string &comment = std::string(), bool force_no_extrusion = false);
     //BBS: generate G2 or G3 extrude which moves by arc

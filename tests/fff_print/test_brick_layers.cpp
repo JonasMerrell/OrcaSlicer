@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "libslic3r/GCodeReader.hpp"
+#include "libslic3r/TriangleMesh.hpp"
 #include "libslic3r/libslic3r.h"
 
 #include "test_helpers.hpp"
@@ -248,4 +249,54 @@ TEST_CASE("Brick layers leave Z-pin channel walls at the layer height", "[BrickL
     });
     CHECK(raised_moves > 0);
     CHECK(near_pin_raised == 0);
+}
+
+TEST_CASE("Brick layers leave the layers of a staircase wave band unraised", "[BrickLayers][WaveOverhangs][Staircase]")
+{
+    // A 10 x 20 x 8 mm tower with a 30 mm shelf (1.2 mm thick) sticking out of one side at z 4.
+    TriangleMesh tower = make_cube(10., 20., 8.);
+    TriangleMesh shelf = make_cube(30., 20., 1.2);
+    shelf.translate(10., 0., 4.);
+    tower.merge(shelf);
+
+    // The band (4 layers) reaches higher than the wave floor layers (1): brick layers skip the band's layers too.
+    DynamicPrintConfig config = DynamicPrintConfig::full_print_config();
+    config.set_deserialize_strict({
+        { "layer_height", "0.2" },
+        { "initial_layer_print_height", "0.2" },
+        { "wall_loops", "3" },
+        { "enable_support", "0" },
+        { "wave_overhangs", "1" },
+        { "wave_overhangs_instead_of_bridges", "1" },
+        { "wave_overhang_floor_layers", "1" },
+        { "wave_overhang_debug_gcode", "1" },
+        { "wave_overhang_staircase", "1" },
+        { "wave_overhang_staircase_layers", "4" },
+        { "wave_overhang_staircase_max_height", "0.6" },
+        { "brick_layers", "1" },
+    });
+    const std::string gcode = slice({ tower }, config);
+
+    std::vector<double> wave_z;
+    {
+        GCodeReader reader;
+        double      layer_z = 0.;
+        reader.parse_buffer(gcode, [&](GCodeReader &, const GCodeReader::GCodeLine &line) {
+            if (line.raw().rfind(";Z:", 0) == 0)
+                layer_z = std::stod(line.raw().substr(3));
+            else if (line.raw().rfind("; WAVE_OVERHANG_START", 0) == 0 &&
+                     std::find(wave_z.begin(), wave_z.end(), layer_z) == wave_z.end())
+                wave_z.push_back(layer_z);
+        });
+    }
+    REQUIRE(!wave_z.empty());
+    size_t raised_moves = 0;
+    for (const Move &m : moves(gcode))
+        if (raised(m) && m.type == "Inner wall") {
+            ++raised_moves;
+            CAPTURE(m.layer_z);
+            for (double z : wave_z)
+                CHECK_FALSE((m.layer_z > z - 1e-3 && m.layer_z < z + 3 * 0.2 + 1e-3));
+        }
+    CHECK(raised_moves > 0);
 }

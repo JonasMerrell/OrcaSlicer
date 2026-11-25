@@ -206,6 +206,14 @@ public:
     // together with wave_overhang_floor_speed_ramp to interpolate floor speeds from
     // the override back up to the normal speed across N layers.
     int8_t wave_overhang_floor_distance = 0;
+    // Staircase wave overhangs (WaveOverhangs/WaveStaircase.hpp): the path belongs to a band
+    // that prints a wave overhang N layers at once. staircase_step is the step (0 = the wave
+    // layer itself, k = k layers higher; such paths are z_contoured at +dz_k and extrude at
+    // their own layer's flow, not the contour-scaled one). staircase_round_end marks the last
+    // path of a round of the band (the wave front advanced, then each step followed).
+    int8_t staircase_step      = 0;
+    bool   staircase_band      = false;
+    bool   staircase_round_end = false;
 
     ExtrusionPath() : mm3_per_mm(-1), width(-1), height(-1), m_role(erNone), m_no_extrusion(false) {}
     ExtrusionPath(ExtrusionRole role) : mm3_per_mm(-1), width(-1), height(-1), m_role(role), m_no_extrusion(false) {}
@@ -225,6 +233,9 @@ public:
         , wave_overhang_perimeter(rhs.wave_overhang_perimeter)
         , wave_overhang_floor_perimeter(rhs.wave_overhang_floor_perimeter)
         , wave_overhang_floor_distance(rhs.wave_overhang_floor_distance)
+        , staircase_step(rhs.staircase_step)
+        , staircase_band(rhs.staircase_band)
+        , staircase_round_end(rhs.staircase_round_end)
         , m_can_reverse(rhs.m_can_reverse)
         , m_role(rhs.m_role)
         , m_no_extrusion(rhs.m_no_extrusion)
@@ -243,6 +254,9 @@ public:
         , wave_overhang_perimeter(rhs.wave_overhang_perimeter)
         , wave_overhang_floor_perimeter(rhs.wave_overhang_floor_perimeter)
         , wave_overhang_floor_distance(rhs.wave_overhang_floor_distance)
+        , staircase_step(rhs.staircase_step)
+        , staircase_band(rhs.staircase_band)
+        , staircase_round_end(rhs.staircase_round_end)
         , m_can_reverse(rhs.m_can_reverse)
         , m_role(rhs.m_role)
         , m_no_extrusion(rhs.m_no_extrusion)
@@ -261,6 +275,9 @@ public:
         , wave_overhang_perimeter(rhs.wave_overhang_perimeter)
         , wave_overhang_floor_perimeter(rhs.wave_overhang_floor_perimeter)
         , wave_overhang_floor_distance(rhs.wave_overhang_floor_distance)
+        , staircase_step(rhs.staircase_step)
+        , staircase_band(rhs.staircase_band)
+        , staircase_round_end(rhs.staircase_round_end)
         , m_can_reverse(rhs.m_can_reverse)
         , m_role(rhs.m_role)
         , m_no_extrusion(rhs.m_no_extrusion)
@@ -279,6 +296,9 @@ public:
         , wave_overhang_perimeter(rhs.wave_overhang_perimeter)
         , wave_overhang_floor_perimeter(rhs.wave_overhang_floor_perimeter)
         , wave_overhang_floor_distance(rhs.wave_overhang_floor_distance)
+        , staircase_step(rhs.staircase_step)
+        , staircase_band(rhs.staircase_band)
+        , staircase_round_end(rhs.staircase_round_end)
         , m_can_reverse(rhs.m_can_reverse)
         , m_role(rhs.m_role)
         , m_no_extrusion(rhs.m_no_extrusion)
@@ -300,6 +320,9 @@ public:
         this->wave_overhang_perimeter = rhs.wave_overhang_perimeter;
         this->wave_overhang_floor_perimeter = rhs.wave_overhang_floor_perimeter;
         this->wave_overhang_floor_distance = rhs.wave_overhang_floor_distance;
+        this->staircase_step = rhs.staircase_step;
+        this->staircase_band = rhs.staircase_band;
+        this->staircase_round_end = rhs.staircase_round_end;
         this->polyline = rhs.polyline;
         return *this;
     }
@@ -319,6 +342,9 @@ public:
         this->wave_overhang_perimeter = rhs.wave_overhang_perimeter;
         this->wave_overhang_floor_perimeter = rhs.wave_overhang_floor_perimeter;
         this->wave_overhang_floor_distance = rhs.wave_overhang_floor_distance;
+        this->staircase_step = rhs.staircase_step;
+        this->staircase_band = rhs.staircase_band;
+        this->staircase_round_end = rhs.staircase_round_end;
         this->polyline = std::move(rhs.polyline);
         return *this;
     }

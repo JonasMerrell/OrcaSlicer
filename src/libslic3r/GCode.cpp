@@ -7,6 +7,7 @@
 #include "Flow.hpp"
 #include "GCode/ThumbnailData.hpp"
 #include "GCode/ToolOrdering.hpp"
+#include "WaveOverhangs/WaveStaircase.hpp"
 #include "GCode/SpiralVase.hpp"
 #include "GCode/PressureEqualizer.hpp"
 #include "GCode/SmallAreaInfillFlowCompensator.hpp"
@@ -8653,6 +8654,15 @@ std::string GCode::change_layer(coordf_t print_z)
 
     m_need_change_layer_lift_z = true;
 
+    // Orca: staircase steps the previous layer reached are no longer above the nozzle. Steps at the
+    // new layer's height stay for this layer: its first travel still starts at the old height (the
+    // layer change rises along it) and must go over them.
+    const double prev_z = m_nominal_z;
+    m_staircase_layer_from_z = prev_z;
+    m_staircase_obstacles.erase(std::remove_if(m_staircase_obstacles.begin(), m_staircase_obstacles.end(),
+                                               [prev_z](const StaircaseObstacle &o) { return o.top_z <= prev_z + EPSILON; }),
+                                m_staircase_obstacles.end());
+
     m_nominal_z = z;
     m_writer.get_position().z() = z;
 
@@ -9144,9 +9154,13 @@ std::string GCode::extrude_perimeters(const Print &print, const std::vector<Obje
             // ORCA: loops flagged as extruded in mid air, out of reach of the layer below, are held back
             // for a second pass after the infill that anchors them. Infill already precedes infill first walls.
             const bool defer_unsupported = !is_infill_first;
+            // Orca: a staircase wave band too: its upper steps stand next to the island's infill and
+            // walls of this layer, so they must already be down (WaveOverhangs/WaveStaircase.hpp).
             auto waits_for_infill = [](const ExtrusionEntity *ee) {
                 if (ee->is_loop())
                     return static_cast<const ExtrusionLoop *>(ee)->print_after_infill;
+                if (WaveOverhangs::Staircase::is_band(ee))
+                    return true;
                 // Orca: brick layers raise open walls too.
                 const auto *multipath = dynamic_cast<const ExtrusionMultiPath *>(ee);
                 return multipath != nullptr && multipath->print_after_infill;
@@ -9162,6 +9176,11 @@ std::string GCode::extrude_perimeters(const Print &print, const std::vector<Obje
             for (const ExtrusionEntity* ee : region.perimeters) {
                 if (defer_unsupported && waits_for_infill(ee) != unsupported_loops_only)
                     continue;
+                if (WaveOverhangs::Staircase::is_band(ee)) {
+                    for (const ExtrusionEntity *band_path : static_cast<const ExtrusionEntityCollection *>(ee)->entities)
+                        gcode += this->extrude_entity(*band_path, "wave staircase");
+                    continue;
+                }
                 const size_t size_before = gcode.size();
                 gcode += this->extrude_entity(*ee, "perimeter", -1., region.perimeters,
                                              wipe_support ? &*wipe_support : nullptr);
@@ -9447,7 +9466,8 @@ static bool overhang_fan_active(float overlap, int overhang_fan_threshold, Extru
 // top surfaces and walls prints onto a flat layer; non-planar sparse infill prints onto the wave of the layer below.
 double GCode::z_contoured_extrusion_ratio(const ExtrusionPath &path, const Point3 &point) const
 {
-    if (path.role() == erIroning)
+    // Orca: a staircase step is a whole layer higher, at its own layer's flow.
+    if (path.role() == erIroning || path.staircase_step > 0)
         return 1.;
     const double z_diff = unscale_(point.z());
     if (path.role() == erInternalInfill && m_config.nonplanar_infill.value) {
@@ -9582,8 +9602,9 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
         }
     }
 
-    // Orca: a non-wave path ends any open wave temperature scope.
-    if (!path.wave_overhang)
+    // Orca: a non-wave path ends any open wave temperature scope. The upper steps of a staircase
+    // band belong to the wave run.
+    if (!path.wave_overhang && !path.staircase_band)
         gcode += wave_temp_restore_gcode();
 
     // Orca: wave-overhang debug-gcode markers (per-path scope).
@@ -9603,7 +9624,7 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
     // CoolingBuffer.
     const int wave_main_fan = m_config.wave_overhang_fan_speed.value;
     const int wave_aux_fan  = m_config.wave_overhang_aux_fan_speed.value;
-    const bool wave_fan_active = path.wave_overhang
+    const bool wave_fan_active = (path.wave_overhang || path.staircase_band)
                                  && (wave_main_fan >= 0 || wave_aux_fan >= 0)
                                  && m_enable_cooling_markers;
     // Orca: wave-overhang Hilbert floor fan override. Reuses the existing
@@ -10087,6 +10108,11 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
     // user-configured wave speed. Also disables variable_speed so we emit a single F.
     if (path.wave_overhang && m_config.wave_overhang_print_speed.value > 0) {
         speed = m_config.wave_overhang_print_speed.value;
+        requires_segmented_extrusion = false;
+        new_points.clear();
+    } else if (path.staircase_step > 0 && m_config.wave_overhang_staircase_speed.value > 0) {
+        // Orca: upper steps of a staircase wave band.
+        speed = m_config.wave_overhang_staircase_speed.value;
         requires_segmented_extrusion = false;
         new_points.clear();
     } else if (path.wave_overhang_floor && m_config.wave_overhang_floor_print_speed.value > 0) {
@@ -10730,6 +10756,38 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
         m_wave_layer_accumulated_time += unscale<double>(path.length()) / std::max(0.01, speed);
     }
 
+    // Orca: staircase wave band. A step above the nozzle's layer height is an obstacle for travels
+    // until the layers reach it; a short round ends lifted, with a dwell, so it cools.
+    if (path.staircase_band) {
+        if (path.staircase_step > 0 && path.polyline.points.size() >= 2) {
+            StaircaseObstacle ob;
+            for (const Point3 &p3 : path.polyline.points) {
+                const Vec2d g = this->point_to_gcode(Point(p3.x(), p3.y()));
+                ob.pl.points.emplace_back(scaled<coord_t>(g.x()), scaled<coord_t>(g.y()));
+            }
+            ob.top_z  = m_nominal_z + unscale<double>(path.polyline.points.front().z());
+            ob.radius = scaled<coord_t>(m_config.wave_overhang_staircase_stagger.value + 0.5 * double(path.width));
+            ob.lift   = m_config.wave_overhang_staircase_travel_lift.value;
+            ob.bbox   = get_extents(ob.pl);
+            ob.bbox.offset(ob.radius);
+            m_staircase_obstacles.emplace_back(std::move(ob));
+        }
+        m_staircase_round_time += unscale<double>(path.length()) / std::max(0.01, speed);
+        if (path.staircase_round_end) {
+            const double min_round = m_config.wave_overhang_staircase_min_round_time.value;
+            if (min_round > 0. && m_staircase_round_time < min_round) {
+                const double here = m_writer.get_position().z();
+                gcode += m_writer.clearance_lift(here + m_config.wave_overhang_staircase_travel_lift.value, m_nominal_z,
+                                                 "wave staircase: lift off the step to cool");
+                char buf[80];
+                snprintf(buf, sizeof(buf), "G4 P%d ; wave staircase min_round_time dwell\n",
+                         int((min_round - m_staircase_round_time) * 1000. + 0.5));
+                gcode += buf;
+            }
+            m_staircase_round_time = 0.;
+        }
+    }
+
     // Orca: wave-overhang: close fan-override scope and clear state flag.
     if (wave_fan_active || wave_floor_fan_active)
         gcode += ";_WAVE_OVERHANG_FAN_END\n";
@@ -11035,6 +11093,21 @@ std::string GCode::travel_to(const Point& point, ExtrusionRole role, std::string
     // if needed, write the gcode_label_objects_end then gcode_label_objects_start
     m_writer.add_object_change_labels(gcode);
 
+    // Orca: staircase wave overhangs. A travel that passes near a printed step higher than where
+    // it starts or ends goes over it: lift first, come down at the destination.
+    if (!m_staircase_obstacles.empty() && travel.size() >= 2) {
+        const double target_z = z == DBL_MAX ? m_nominal_z : z;
+        // Steps no higher than both ends are ordinary material at the travel's own height.
+        double       low_z    = std::min(m_writer.get_position().z() - m_writer.get_zhop(), target_z);
+        // The first travel of a layer still starts at the previous layer's height: change_layer()
+        // only moved the writer's Z on paper.
+        if (m_need_change_layer_lift_z)
+            low_z = std::min(low_z, m_staircase_layer_from_z);
+        const double clear_z  = this->staircase_travel_clearance_z(travel, low_z);
+        if (clear_z > target_z + EPSILON)
+            gcode += m_writer.clearance_lift(clear_z, target_z, "wave staircase: clear the higher steps");
+    }
+
     // Orca: wave-overhang: if we're traveling into/within a wave-overhang path, honor
     // the per-profile travel-speed override. 0 disables the override.
     const double wave_travel_speed = (m_inside_wave_overhang && m_config.wave_overhang_travel_speed.value > 0)
@@ -11097,6 +11170,49 @@ std::string GCode::travel_to(const Point& point, ExtrusionRole role, std::string
     }
 
     return gcode;
+}
+
+// Orca: staircase wave overhangs, see m_staircase_obstacles.
+double GCode::staircase_travel_clearance_z(const Polyline &travel, double above_z) const
+{
+    double need = -std::numeric_limits<double>::infinity();
+    if (m_staircase_obstacles.empty() || travel.size() < 2)
+        return need;
+    Points g;
+    g.reserve(travel.size());
+    for (const Point &p : travel.points) {
+        const Vec2d v = this->point_to_gcode(p);
+        g.emplace_back(scaled<coord_t>(v.x()), scaled<coord_t>(v.y()));
+    }
+    auto seg_dist2 = [](const Vec2d &a, const Vec2d &b, const Vec2d &p) {
+        const Vec2d  ab = b - a;
+        const double l2 = ab.squaredNorm();
+        const double t  = l2 > 0. ? std::clamp((p - a).dot(ab) / l2, 0., 1.) : 0.;
+        return (a + t * ab - p).squaredNorm();
+    };
+    auto cross = [](const Vec2d &a, const Vec2d &b, const Vec2d &c, const Vec2d &d) {
+        auto orient = [](const Vec2d &p, const Vec2d &q, const Vec2d &r) { return (q - p).x() * (r - p).y() - (q - p).y() * (r - p).x(); };
+        const double o1 = orient(a, b, c), o2 = orient(a, b, d), o3 = orient(c, d, a), o4 = orient(c, d, b);
+        return ((o1 > 0) != (o2 > 0)) && ((o3 > 0) != (o4 > 0));
+    };
+    for (size_t i = 1; i < g.size(); ++i) {
+        const Vec2d a = g[i - 1].cast<double>(), b = g[i].cast<double>();
+        BoundingBox sb(Points{ g[i - 1], g[i] });
+        for (const StaircaseObstacle &o : m_staircase_obstacles) {
+            if (o.top_z <= above_z + EPSILON || o.top_z + o.lift <= need || !o.bbox.overlap(sb))
+                continue;
+            const double r2 = double(o.radius) * double(o.radius);
+            bool hit = false;
+            for (size_t j = 1; j < o.pl.points.size() && !hit; ++j) {
+                const Vec2d c = o.pl.points[j - 1].cast<double>(), d = o.pl.points[j].cast<double>();
+                hit = cross(a, b, c, d) || seg_dist2(a, b, c) < r2 || seg_dist2(a, b, d) < r2 ||
+                      seg_dist2(c, d, a) < r2 || seg_dist2(c, d, b) < r2;
+            }
+            if (hit)
+                need = std::max(need, o.top_z + o.lift);
+        }
+    }
+    return need;
 }
 
 //BBS

@@ -1422,8 +1422,23 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
         std::string("wave_overhang_spacing_mode"),
         std::string("wave_overhang_min_new_area"),
         std::string("wave_overhang_corner_taper_enable"),
+        std::string("wave_overhang_staircase"),
     })
         toggle_line(k, wo_enabled);
+
+    // Orca: staircase wave overhang tunables, shown when the staircase is on.
+    const bool wo_staircase = wo_enabled && config->opt_bool("wave_overhang_staircase");
+    for (const std::string &k : {
+        std::string("wave_overhang_staircase_layers"),
+        std::string("wave_overhang_staircase_stagger"),
+        std::string("wave_overhang_staircase_rings_per_step"),
+        std::string("wave_overhang_staircase_pattern"),
+        std::string("wave_overhang_staircase_max_height"),
+        std::string("wave_overhang_staircase_travel_lift"),
+        std::string("wave_overhang_staircase_speed"),
+        std::string("wave_overhang_staircase_min_round_time"),
+    })
+        toggle_line(k, wo_staircase);
 
     // Orca: corner-reinforcement sub-options. Master toggle reveals the three
     // tunables, same shape as the Hilbert-floor section below.

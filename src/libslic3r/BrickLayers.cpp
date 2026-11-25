@@ -375,8 +375,12 @@ void apply(PrintObject &object)
     for (size_t r = 0; r < object.num_printing_regions(); ++r) {
         const PrintRegionConfig &config = object.printing_region(r).config();
         any |= config.brick_layers.value;
-        if (config.wave_overhangs.value)
+        if (config.wave_overhangs.value) {
             wave_floors = std::max(wave_floors, std::max(1, config.wave_overhang_floor_layers.value));
+            // Orca: a staircase band prints the overhang of the next layers-1 layers along with the wave layer.
+            if (config.wave_overhang_staircase.value)
+                wave_floors = std::max(wave_floors, config.wave_overhang_staircase_layers.value - 1);
+        }
     }
     if (!any)
         return;
