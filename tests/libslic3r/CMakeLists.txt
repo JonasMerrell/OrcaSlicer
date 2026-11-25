@@ -25,6 +25,8 @@ add_executable(${_TEST_NAME}_tests
     test_belt_brim.cpp
     test_buildvolume.cpp
     test_calib.cpp
+    # Fork: headless CLI option catalog guard and --load-job loader.
+    test_cli_headless.cpp
     test_clipper_offset.cpp
     test_clipper_utils.cpp
     test_cut_connectors.cpp
@@ -50,6 +52,7 @@ add_executable(${_TEST_NAME}_tests
     test_filament_mixer.cpp
     test_fill_plane_path.cpp
     test_adaptive_infill_field.cpp
+    test_nonplanar_infill.cpp
     test_geometry.cpp
     test_kdtree.cpp
     test_lightning.cpp
@@ -87,6 +90,9 @@ add_executable(${_TEST_NAME}_tests
     test_slicing.cpp
     test_wave_overhangs.cpp
     test_wave_staircase.cpp
+    test_brick_layers.cpp
+    test_z_pins.cpp
+    test_toolhead_clearance.cpp
     test_optimizers.cpp
     test_ordering_strategies.cpp
     test_parameter_utils.cpp

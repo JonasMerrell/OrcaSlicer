@@ -17,6 +17,7 @@
 #include "SurfaceCollection.hpp"
 #include "libslic3r.h"
 #include "Utils.hpp"
+#include "NonplanarInfill.hpp"
 
 #include <algorithm>
 #include <boost/log/trivial.hpp>
@@ -719,3 +720,19 @@ BoundingBox get_extents(const LayerRegionPtrs &layer_regions)
 }
 
 }
+
+namespace Slic3r {
+
+double Layer::nonplanar_infill_dz(const Point &p) const
+{
+    // The sparse infill areas of the regions do not overlap, and each field is 0 outside its own.
+    for (const LayerRegion *region : m_regions)
+        if (region->nonplanar_infill) {
+            const double dz = region->nonplanar_infill->dz(p);
+            if (dz != 0.)
+                return dz;
+        }
+    return 0.;
+}
+
+} // namespace Slic3r
