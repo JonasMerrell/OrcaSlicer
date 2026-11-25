@@ -140,6 +140,12 @@ enum class WaveOverhangPattern : int {
     Smart
 };
 
+// Orca: shape of the non-planar sparse infill wave.
+enum class NonplanarInfillPattern : int {
+    Sine,       // one sine wave along nonplanar_infill_angle
+    EggCrate    // two crossed sine waves, so lines in any direction see the wave
+};
+
 enum AuthorizationType {
     atKeyPassword, atUserPassword
 };
@@ -866,6 +872,7 @@ CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(AdaptiveInfillGradient)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveOverhangSpacingMode)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveOverhangSeamMode)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveOverhangPattern)
+CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(NonplanarInfillPattern)
 
 #undef CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS
 
@@ -1735,6 +1742,22 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionBool, zaa_dont_alternate_fill_direction))
     ((ConfigOptionFloat, zaa_min_z))
     ((ConfigOptionFloat, zaa_minimize_perimeter_height))
+
+    // Orca: non-planar (wavy in Z) sparse infill
+    ((ConfigOptionBool,                         nonplanar_infill))
+    ((ConfigOptionFloatOrPercent,               nonplanar_infill_amplitude))
+    ((ConfigOptionFloat,                        nonplanar_infill_wavelength))
+    ((ConfigOptionFloat,                        nonplanar_infill_phase_shift))
+    ((ConfigOptionFloat,                        nonplanar_infill_angle))
+    ((ConfigOptionEnum<NonplanarInfillPattern>, nonplanar_infill_pattern))
+    ((ConfigOptionInt,                          nonplanar_infill_blend_layers))
+    ((ConfigOptionFloat,                        nonplanar_infill_edge_blend))
+    ((ConfigOptionFloat,                        nonplanar_infill_max_dz))
+    ((ConfigOptionFloat, zaa_max_dz))
+    ((ConfigOptionFloat, zaa_min_slope))
+    ((ConfigOptionBool, zaa_top_surfaces))
+    ((ConfigOptionBool, zaa_outer_walls))
+    ((ConfigOptionBool, zaa_inner_walls))
     )
 
 PRINT_CONFIG_CLASS_DEFINE(
@@ -2122,6 +2145,11 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              extruder_clearance_height_to_lid))//BBS
     ((ConfigOptionFloat,              extruder_clearance_radius))
     ((ConfigOptionFloat,              nozzle_height))
+    // Fork: toolhead clearance for non-planar printing (Clearance/ToolheadClearance.hpp).
+    ((ConfigOptionBool,               toolhead_clearance_enable))
+    ((ConfigOptionPoints,             toolhead_clearance_profile))
+    ((ConfigOptionString,             toolhead_clearance_mesh))
+    ((ConfigOptionFloat,              toolhead_clearance_margin))
     ((ConfigOptionStrings,            extruder_colour))
     ((ConfigOptionPoints,             extruder_offset))
     ((ConfigOptionBools,              reduce_fan_stop_start_freq))

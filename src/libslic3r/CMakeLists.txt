@@ -116,6 +116,8 @@ set(lisbslic3r_sources
     ConnectedBodies.cpp
     ConnectedBodies.hpp
     ContourZ.cpp
+    NonplanarInfill.cpp
+    NonplanarInfill.hpp
     CustomGCode.cpp
     CustomGCode.hpp
     CutUtils.cpp
@@ -148,6 +150,8 @@ set(lisbslic3r_sources
     WaveOverhangs/WaveOverhangs.hpp
     ZPins/ZPins.cpp
     ZPins/ZPins.hpp
+    Clearance/ToolheadClearance.cpp
+    Clearance/ToolheadClearance.hpp
     ExtrusionSimulator.cpp
     ExtrusionSimulator.hpp
     FaceDetector.cpp

@@ -1161,7 +1161,8 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
     toggle_line("ironing_speed", has_ironing || has_support_ironing, -1, _L("Enable ironing or support ironing to edit ironing speed."));
 
     bool has_zaa = config->opt_bool("zaa_enabled");
-    for (auto el : {"zaa_minimize_perimeter_height", "zaa_min_z", "zaa_dont_alternate_fill_direction", "ironing_expansion"})
+    for (auto el : {"zaa_minimize_perimeter_height", "zaa_min_z", "zaa_dont_alternate_fill_direction", "zaa_max_dz", "zaa_min_slope",
+                    "zaa_top_surfaces", "zaa_outer_walls", "zaa_inner_walls", "ironing_expansion"})
         toggle_line(el, has_zaa, -1, _L("Enable Z contouring to use this setting."));
 
     bool have_sequential_printing = (config->opt_enum<PrintSequence>("print_sequence") == PrintSequence::ByObject);
@@ -1370,6 +1371,15 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
 
     std::string printer_type = wxGetApp().preset_bundle->printers.get_edited_preset().get_printer_type(wxGetApp().preset_bundle);
     toggle_line("enable_wrapping_detection", DevPrinterConfigUtil::support_wrapping_detection(printer_type), -1, _L("The selected printer does not support wrapping detection."));
+
+    // Orca: non-planar infill tunables only show with the master toggle on.
+    {
+        const bool np_enabled = config->opt_bool("nonplanar_infill");
+        for (const char *k : { "nonplanar_infill_amplitude", "nonplanar_infill_wavelength", "nonplanar_infill_pattern",
+                               "nonplanar_infill_angle", "nonplanar_infill_phase_shift", "nonplanar_infill_blend_layers",
+                               "nonplanar_infill_edge_blend", "nonplanar_infill_max_dz" })
+            toggle_line(k, np_enabled);
+    }
 
     // Orca: wave-overhangs conditional visibility.
     // - Master toggle off → hide every wave_overhang_* tunable (only master stays).

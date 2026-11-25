@@ -32,6 +32,7 @@
 #include "I18N.hpp"
 #include "IMEXHelpers.hpp"
 #include "GCode.hpp"
+#include "NonplanarInfill.hpp"
 #include <cstdio>
 #include "Exception.hpp"
 #include "LifecycleEvents.hpp"
@@ -9436,6 +9437,26 @@ static bool overhang_fan_active(float overlap, int overhang_fan_threshold, Extru
     return overlap_threshold >= 0.f && overlap <= overlap_threshold;
 }
 
+// Flow factor of a point of a Z contoured path: the local gap under the nozzle over the layer height. Z contouring of
+// top surfaces and walls prints onto a flat layer; non-planar sparse infill prints onto the wave of the layer below.
+double GCode::z_contoured_extrusion_ratio(const ExtrusionPath &path, const Point3 &point) const
+{
+    if (path.role() == erIroning)
+        return 1.;
+    const double z_diff = unscale_(point.z());
+    if (path.role() == erInternalInfill && m_config.nonplanar_infill.value) {
+        // The layer the line is printed onto: the one right below, or for combined infill (a line several layers
+        // tall) the one under the line's bottom.
+        const Layer *below_layer = m_layer != nullptr ? m_layer->lower_layer : nullptr;
+        while (below_layer != nullptr && below_layer->lower_layer != nullptr &&
+               below_layer->print_z > m_layer->print_z - path.height + EPSILON)
+            below_layer = below_layer->lower_layer;
+        const double below = below_layer != nullptr ? below_layer->nonplanar_infill_dz(point.to_point()) : 0.;
+        return nonplanar_infill_extrusion_ratio(path.height, z_diff, below);
+    }
+    return (path.height + z_diff) / path.height;
+}
+
 std::string GCode::_extrude(const ExtrusionPath &path, const std::string &path_description, double speed)
 {
     std::vector<std::vector<double>> uncut_line_lengths;
@@ -10423,10 +10444,7 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
                         Vec2d dest2d = this->point_to_gcode(line.b.to_point());
                         coordf_t z_diff = unscale_(line.b.z());
 
-                        double extrusion_ratio = 1;
-                        if (path.role() != erIroning) {
-                            extrusion_ratio = (path.height + z_diff) / path.height;
-                        }
+                        const double extrusion_ratio = this->z_contoured_extrusion_ratio(path, line.b);
 
                         double e = dE * extrusion_ratio;
 
@@ -10631,10 +10649,7 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
                 Vec2d    dest2d = p.head<2>();
                 coordf_t z_diff = unscale_(processed_point.p.z());
 
-                double extrusion_ratio = 1;
-                if (path.role() != erIroning) {
-                    extrusion_ratio = (path.height + z_diff) / path.height;
-                }
+                const double extrusion_ratio = this->z_contoured_extrusion_ratio(path, processed_point.p);
 
                 double e = dE * extrusion_ratio;
 

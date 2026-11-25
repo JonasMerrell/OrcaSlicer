@@ -999,6 +999,8 @@ protected:
 
     double      calc_max_volumetric_speed(const double layer_height, const double line_width, const std::string co_str);
     std::string _extrude(const ExtrusionPath &path, const std::string &path_description = "", double speed = -1);
+    // Orca: flow factor of a point of a Z contoured path (ZAA or non-planar infill).
+    double z_contoured_extrusion_ratio(const ExtrusionPath &path, const Point3 &point) const;
     ExtrusionPaths belt_cut_at_band_edges(const ExtrusionPath &path, std::vector<std::vector<double>> &uncut_line_lengths) const;
     // _extrude() of a path that stays in one band above the belt (see belt_cut_at_band_edges()).
     std::string _extrude_piece(const ExtrusionPath &path, const std::string &path_description, double speed);

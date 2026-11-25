@@ -288,6 +288,12 @@ static t_config_enum_values s_keys_map_WaveOverhangPattern {
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(WaveOverhangPattern)
 
+static t_config_enum_values s_keys_map_NonplanarInfillPattern {
+    { "sine",      int(NonplanarInfillPattern::Sine) },
+    { "egg_crate", int(NonplanarInfillPattern::EggCrate) }
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(NonplanarInfillPattern)
+
 static t_config_enum_values s_keys_map_FuzzySkinType {
     { "none",           int(FuzzySkinType::None) },
     { "external",       int(FuzzySkinType::External) },
@@ -2872,6 +2878,41 @@ void PrintConfigDef::init_fff_params()
     def->min = 0;
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(40));
+
+    // Fork: toolhead clearance for non-planar printing.
+    def = this->add("toolhead_clearance_enable", coBool);
+    def->label = L("Toolhead clearance check");
+    def->tooltip = L("Check non-planar moves against the already printed part using the toolhead shape below. "
+                     "Non-planar features (Z anti-aliasing, non-planar infill) limit how far the nozzle may dip, "
+                     "and the finished G-code is scanned for toolhead collisions. Has no effect on planar prints.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("toolhead_clearance_profile", coPoints);
+    def->label = L("Toolhead clearance profile");
+    def->tooltip = L("Underside of the toolhead as a stepped cone around the nozzle, as \"radius x height\" pairs in mm: "
+                     "within each radius from the nozzle axis (beyond the previous one) nothing hangs lower than that height "
+                     "above the nozzle tip. A last step with a large radius (e.g. 1000x30) models the gantry. "
+                     "Example: 0.5x0, 4x1.6, 45x1.1, 1000x30");
+    def->mode = comAdvanced;
+    def->gui_type = ConfigOptionDef::GUIType::one_string;
+    def->set_default_value(new ConfigOptionPoints());
+
+    def = this->add("toolhead_clearance_mesh", coString);
+    def->label = L("Toolhead clearance mesh");
+    def->tooltip = L("Optional STL or OBJ of the toolhead in the nozzle frame (nozzle tip at the origin, printer X/Y/Z axes). "
+                     "Where both are set, the lower of the mesh and the profile is used.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionString(""));
+
+    def = this->add("toolhead_clearance_margin", coFloat);
+    def->label = L("Toolhead clearance margin");
+    def->tooltip = L("Extra gap kept between the toolhead and the printed part, on top of the profile or mesh. "
+                     "It never applies to the nozzle tip itself.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.2));
 
     def = this->add("nozzle_height", coFloat);
     def->label = L("Nozzle height");
@@ -5469,6 +5510,154 @@ void PrintConfigDef::init_fff_params()
     def->max      = 100;
     def->mode     = comExpert;
     def->set_default_value(new ConfigOptionFloat(0.05));
+
+    def = this->add("nonplanar_infill", coBool);
+    def->label    = L("Non-planar infill");
+    def->category = L("Strength");
+    def->tooltip  = L("Print sparse infill as lines whose height follows a smooth wave instead of a flat layer, so the "
+                      "infill layers nest into each other and the part is stronger along Z. The wave fades out next to "
+                      "solid, top and bottom layers and near the walls, so those stay flat. The flow follows the local "
+                      "distance to the layer below.");
+    def->mode     = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("nonplanar_infill_amplitude", coFloatOrPercent);
+    def->label    = L("Amplitude");
+    def->category = L("Strength");
+    def->tooltip  = L("How far the infill moves above and below the layer's plane at the crest of the wave, in mm or as a "
+                      "percentage of the layer height. It is never more than one layer height or the maximum Z offset.");
+    def->sidetext = L("mm or %");
+    def->ratio_over = "layer_height";
+    def->min      = 0;
+    def->max_literal = 2;
+    def->mode     = comAdvanced;
+    def->set_default_value(new ConfigOptionFloatOrPercent(50, true));
+
+    def = this->add("nonplanar_infill_wavelength", coFloat);
+    def->label    = L("Wavelength");
+    def->category = L("Strength");
+    def->tooltip  = L("Distance between two crests of the wave. Short waves tilt the nozzle path more steeply, so the "
+                      "flat face of the nozzle may drag over infill already printed on the same layer.");
+    def->sidetext = L("mm");
+    def->min      = 1;
+    def->max      = 1000;
+    def->mode     = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(10));
+
+    def = this->add("nonplanar_infill_phase_shift", coFloat);
+    def->label    = L("Phase shift per layer");
+    def->category = L("Strength");
+    def->tooltip  = L("How far the wave moves on each layer, in degrees of the wave. 0 stacks identical waves so every "
+                      "layer keeps its full thickness; other values make layers thicker and thinner in turn, and the "
+                      "flow follows.");
+    def->sidetext = u8"°";
+    def->min      = -360;
+    def->max      = 360;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("nonplanar_infill_angle", coFloat);
+    def->label    = L("Wave direction");
+    def->category = L("Strength");
+    def->tooltip  = L("Direction the sine wave travels in, measured from the X axis. Lines running across this direction "
+                      "stay flat; the egg crate pattern adds a second wave at 90 degrees.");
+    def->sidetext = u8"°";
+    def->min      = -360;
+    def->max      = 360;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("nonplanar_infill_pattern", coEnum);
+    def->label    = L("Wave pattern");
+    def->category = L("Strength");
+    def->tooltip  = L("Sine: one wave along the wave direction. Egg crate: the average of two crossed waves, so infill "
+                      "lines in every direction go up and down.");
+    def->enum_keys_map = &ConfigOptionEnum<NonplanarInfillPattern>::get_enum_values();
+    def->enum_values.push_back("sine");
+    def->enum_values.push_back("egg_crate");
+    def->enum_labels.push_back(L("Sine"));
+    def->enum_labels.push_back(L("Egg crate"));
+    def->mode     = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<NonplanarInfillPattern>(NonplanarInfillPattern::Sine));
+
+    def = this->add("nonplanar_infill_blend_layers", coInt);
+    def->label    = L("Blend layers");
+    def->category = L("Strength");
+    def->tooltip  = L("Number of sparse infill layers over which the wave grows from flat to full height, counted from "
+                      "the nearest layer that is not sparse infill at the same place (solid, top, bottom or bridge "
+                      "infill, or outside the part). The sparse infill right next to such a layer is always flat.");
+    def->min      = 1;
+    def->max      = 20;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionInt(2));
+
+    def = this->add("nonplanar_infill_edge_blend", coFloat);
+    def->label    = L("Edge blend distance");
+    def->category = L("Strength");
+    def->tooltip  = L("Distance from the edge of the sparse infill area (the inner walls or solid infill next to it) over "
+                      "which the wave grows from flat to full height.");
+    def->sidetext = L("mm");
+    def->min      = 0;
+    def->max      = 100;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionFloat(2));
+
+    def = this->add("nonplanar_infill_max_dz", coFloat);
+    def->label    = L("Maximum Z offset");
+    def->category = L("Strength");
+    def->tooltip  = L("Hard limit on how far the nozzle may leave the layer's plane, up or down, whatever the amplitude. "
+                      "Keep it well under the clearance between the nozzle tip and the lowest part of the toolhead "
+                      "beside it (a probe, a fan duct).");
+    def->sidetext = L("mm");
+    def->min      = 0;
+    def->max      = 2;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionFloat(0.3));
+    def = this->add("zaa_max_dz", coFloat);
+    def->label    = L("Maximum Z deviation");
+    def->category = L("Quality");
+    def->tooltip  = L("The farthest Z contouring may move the nozzle away from the layer's nominal height, up or down.\n"
+                      "It is never more than one layer height, whatever this is set to, so the nozzle stays inside "
+                      "the layer it prints and the toolhead keeps the clearance of planar printing.\n"
+                      "Set to 0 to allow a full layer height.");
+    def->sidetext = L("mm");	// millimeters, CIS languages need translation
+    def->min      = 0;
+    def->max      = 10;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("zaa_min_slope", coFloat);
+    def->label    = L("Minimum slope");
+    def->category = L("Quality");
+    def->tooltip  = L("Only contour where the model surface is at least this steep (degrees from horizontal). "
+                      "Flatter areas are printed at the layer's nominal height.\n"
+                      "Set to 0 to contour every top surface.");
+    def->sidetext = u8"°";	// degrees, don't need translation
+    def->min      = 0;
+    def->max      = 90;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("zaa_top_surfaces", coBool);
+    def->label    = L("Contour top surfaces");
+    def->category = L("Quality");
+    def->tooltip  = L("Contour top surface infill and ironing.");
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("zaa_outer_walls", coBool);
+    def->label    = L("Contour outer walls");
+    def->category = L("Quality");
+    def->tooltip  = L("Lower outer walls under a sloped top surface to the model surface.");
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("zaa_inner_walls", coBool);
+    def->label    = L("Contour inner walls");
+    def->category = L("Quality");
+    def->tooltip  = L("Lower inner walls under a sloped top surface to the model surface.");
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionBool(true));
 
     def = this->add("layer_change_gcode", coString);
     def->label = L("Layer change G-code");
@@ -13527,6 +13716,16 @@ CLIActionsConfigDef::CLIActionsConfigDef()
     def->label = L("Output Model Info");
     def->tooltip = L("This outputs the model\u2019s information.");
     def->set_default_value(new ConfigOptionBool(false));
+
+    // Fork: check finished G-code for toolhead collisions with the part it prints (non-planar).
+    def = this->add("check_toolhead_clearance", coString);
+    def->label = L("Check toolhead clearance of G-code");
+    def->tooltip = L("Replay a G-code file, build the printed part from its extrusions and report every move where the toolhead "
+                     "(toolhead_clearance_profile / toolhead_clearance_mesh from --load-settings) hits what was printed before it. "
+                     "Prints a JSON report to stdout (and <name>.clearance.json in --outputdir), then exits. "
+                     "Runs whether or not toolhead_clearance_enable is set.");
+    def->cli_params = "file.gcode";
+    def->set_default_value(new ConfigOptionString());
 
     def = this->add("inspect_mesh", coBool);
     def->label = L("Inspect mesh (JSON to stdout)");

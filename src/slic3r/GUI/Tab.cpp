@@ -3107,6 +3107,11 @@ void TabPrint::build()
         optgroup->append_single_option_line("zaa_minimize_perimeter_height", "quality_settings_z_contouring#minimize-wall-height-angle");
         optgroup->append_single_option_line("zaa_min_z", "quality_settings_z_contouring#minimum-z-height");
         optgroup->append_single_option_line("zaa_dont_alternate_fill_direction", "quality_settings_z_contouring#dont-alternate-fill-direction");
+        optgroup->append_single_option_line("zaa_max_dz", "quality_settings_z_contouring");
+        optgroup->append_single_option_line("zaa_min_slope", "quality_settings_z_contouring");
+        optgroup->append_single_option_line("zaa_top_surfaces", "quality_settings_z_contouring");
+        optgroup->append_single_option_line("zaa_outer_walls", "quality_settings_z_contouring");
+        optgroup->append_single_option_line("zaa_inner_walls", "quality_settings_z_contouring");
         // Orca: it's not used yet, so hide it in UI for now
         // optgroup->append_single_option_line("ironing_expansion");
 
@@ -3335,6 +3340,12 @@ void TabPrint::build()
         optgroup->append_single_option_line("z_pin_dwell");
         optgroup->append_single_option_line("z_pin_top_margin");
         optgroup->append_single_option_line("z_pin_bottom_margin");
+
+        optgroup = page->new_optgroup(L("Non-planar infill"), L"param_infill");
+        for (const char *key : { "nonplanar_infill", "nonplanar_infill_amplitude", "nonplanar_infill_wavelength",
+                                 "nonplanar_infill_pattern", "nonplanar_infill_angle", "nonplanar_infill_phase_shift",
+                                 "nonplanar_infill_blend_layers", "nonplanar_infill_edge_blend", "nonplanar_infill_max_dz" })
+            optgroup->append_single_option_line(key);
 
     page = add_options_page(L("Speed"), "custom-gcode_speed"); // ORCA: icon only visible on placeholders
         optgroup = page->new_optgroup(L("First layer speed"), L"param_speed_first", 15);
@@ -5748,6 +5759,11 @@ void TabPrinter::build_fff()
         optgroup->append_single_option_line("extruder_clearance_dist_to_rod", "printer_basic_information_extruder_clearance#distance-to-rod");
         optgroup->append_single_option_line("extruder_clearance_height_to_rod", "printer_basic_information_extruder_clearance#height-to-rod");
         optgroup->append_single_option_line("extruder_clearance_height_to_lid", "printer_basic_information_extruder_clearance#height-to-lid");
+        // Fork: toolhead shape for non-planar collision checks.
+        optgroup->append_single_option_line("toolhead_clearance_enable");
+        optgroup->append_single_option_line("toolhead_clearance_profile");
+        optgroup->append_single_option_line("toolhead_clearance_mesh");
+        optgroup->append_single_option_line("toolhead_clearance_margin");
 
         optgroup = page->new_optgroup(L("Adaptive bed mesh"), "param_adaptive_mesh");
         optgroup->append_single_option_line("bed_mesh_min", "printer_basic_information_adaptive_bed_mesh#bed-mesh");

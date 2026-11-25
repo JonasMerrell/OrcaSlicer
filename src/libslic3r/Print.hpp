@@ -587,6 +587,9 @@ private:
     void ironing();
     bool need_z_contouring() const;
     void contour_z();
+    // Orca: whether any region uses Z contouring (ZAA), which needs the mesh, as opposed to non-planar infill only.
+    bool need_zaa() const;
+    void make_nonplanar_infill();
     // with_belt_brim = false leaves the belt brim to generate_belt_brim(), for a
     // caller that runs the support step of several objects in parallel.
     void generate_support_material(bool with_belt_brim = true);
