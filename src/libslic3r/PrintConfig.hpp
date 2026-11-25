@@ -148,6 +148,12 @@ enum class WaveStaircasePattern : int {
     Concentric
 };
 
+// Orca: shape of the non-planar sparse infill wave.
+enum class NonplanarInfillPattern : int {
+    Sine,       // one sine wave along nonplanar_infill_angle
+    EggCrate    // two crossed sine waves, so lines in any direction see the wave
+};
+
 enum AuthorizationType {
     atKeyPassword, atUserPassword
 };
@@ -430,6 +436,12 @@ enum class SeamScarfType {
     None,
     External,
     All,
+};
+
+// Orca: Z-pin grid
+enum class ZPinPattern {
+    zppGrid,
+    zppStaggered,
 };
 
 // Orca
@@ -827,6 +839,7 @@ extern std::vector<std::string> save_extruder_nozzle_stats_to_string(const std::
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(PrinterTechnology)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(GCodeFlavor)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(FuzzySkinType)
+CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(ZPinPattern)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(FuzzySkinMode)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(TopSurfaceExpansionDirection)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WipeTowerType)
@@ -868,6 +881,7 @@ CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveOverhangSpacingMode)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveOverhangSeamMode)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveOverhangPattern)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WaveStaircasePattern)
+CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(NonplanarInfillPattern)
 
 #undef CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS
 
@@ -1470,6 +1484,23 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionInt,  interlocking_depth))
     ((ConfigOptionInt,  interlocking_boundary_avoidance))
 
+    // Orca: Z-pinning (ZPins/ZPins.cpp)
+    ((ConfigOptionBool,                z_pins))
+    ((ConfigOptionFloat,               z_pin_diameter))
+    ((ConfigOptionFloat,               z_pin_spacing))
+    ((ConfigOptionEnum<ZPinPattern>,   z_pin_pattern))
+    ((ConfigOptionBool,                z_pin_in_sparse_infill))
+    ((ConfigOptionBool,                z_pin_in_inner_walls))
+    ((ConfigOptionBool,                z_pin_in_solid_infill))
+    ((ConfigOptionInt,                 z_pin_interval))
+    ((ConfigOptionBool,                z_pin_alternate))
+    ((ConfigOptionPercent,             z_pin_overfill))
+    ((ConfigOptionFloat,               z_pin_injection_speed))
+    ((ConfigOptionFloat,               z_pin_injection_height))
+    ((ConfigOptionFloat,               z_pin_dwell))
+    ((ConfigOptionInt,                 z_pin_top_margin))
+    ((ConfigOptionInt,                 z_pin_bottom_margin))
+
     // Orca: internal use only
     ((ConfigOptionBool,  calib_flowrate_topinfill_special_order)) // ORCA: special flag for flow rate calibration
 
@@ -1582,6 +1613,11 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionBool, unsupported_wall_last))
     ((ConfigOptionInt, outer_wall_filament_id))
     ((ConfigOptionInt, inner_wall_filament_id))
+    // Brick layers: alternate inner walls raised by half a layer height so the walls interlock
+    ((ConfigOptionBool,                 brick_layers))
+    ((ConfigOptionInt,                  brick_layers_first_wall))
+    ((ConfigOptionInt,                  brick_layers_start_layer))
+    ((ConfigOptionFloat,                brick_layers_flow_ratio))
     // Wave Overhangs
     ((ConfigOptionBool,                 wave_overhangs))
     ((ConfigOptionBool,                 wave_overhangs_instead_of_bridges))
@@ -1729,6 +1765,22 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionBool, zaa_dont_alternate_fill_direction))
     ((ConfigOptionFloat, zaa_min_z))
     ((ConfigOptionFloat, zaa_minimize_perimeter_height))
+
+    // Orca: non-planar (wavy in Z) sparse infill
+    ((ConfigOptionBool,                         nonplanar_infill))
+    ((ConfigOptionFloatOrPercent,               nonplanar_infill_amplitude))
+    ((ConfigOptionFloat,                        nonplanar_infill_wavelength))
+    ((ConfigOptionFloat,                        nonplanar_infill_phase_shift))
+    ((ConfigOptionFloat,                        nonplanar_infill_angle))
+    ((ConfigOptionEnum<NonplanarInfillPattern>, nonplanar_infill_pattern))
+    ((ConfigOptionInt,                          nonplanar_infill_blend_layers))
+    ((ConfigOptionFloat,                        nonplanar_infill_edge_blend))
+    ((ConfigOptionFloat,                        nonplanar_infill_max_dz))
+    ((ConfigOptionFloat, zaa_max_dz))
+    ((ConfigOptionFloat, zaa_min_slope))
+    ((ConfigOptionBool, zaa_top_surfaces))
+    ((ConfigOptionBool, zaa_outer_walls))
+    ((ConfigOptionBool, zaa_inner_walls))
     )
 
 PRINT_CONFIG_CLASS_DEFINE(
@@ -2116,6 +2168,11 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              extruder_clearance_height_to_lid))//BBS
     ((ConfigOptionFloat,              extruder_clearance_radius))
     ((ConfigOptionFloat,              nozzle_height))
+    // Fork: toolhead clearance for non-planar printing (Clearance/ToolheadClearance.hpp).
+    ((ConfigOptionBool,               toolhead_clearance_enable))
+    ((ConfigOptionPoints,             toolhead_clearance_profile))
+    ((ConfigOptionString,             toolhead_clearance_mesh))
+    ((ConfigOptionFloat,              toolhead_clearance_margin))
     ((ConfigOptionStrings,            extruder_colour))
     ((ConfigOptionPoints,             extruder_offset))
     ((ConfigOptionBools,              reduce_fan_stop_start_freq))

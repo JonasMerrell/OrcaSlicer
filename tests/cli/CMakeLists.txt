@@ -84,3 +84,48 @@ set_tests_properties(cli_wave_staircase PROPERTIES
     LABELS "CLI;RequiresApp;WaveOverhangs"
     SKIP_RETURN_CODE 77
     TIMEOUT 900)
+
+add_test(NAME cli_brick_layers
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_brick_layers.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON})
+set_tests_properties(cli_brick_layers PROPERTIES
+    LABELS "CLI;RequiresApp;BrickLayers"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 600)
+
+add_test(NAME cli_nonplanar_infill
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_nonplanar_infill.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON})
+set_tests_properties(cli_nonplanar_infill PROPERTIES
+    LABELS "CLI;RequiresApp"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 900)
+
+add_test(NAME cli_zaa
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_zaa.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON})
+set_tests_properties(cli_zaa PROPERTIES
+    LABELS "CLI;RequiresApp;ZAA"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 900)
+
+# Fork: toolhead clearance settings, the post-slice report and --check-toolhead-clearance.
+add_test(NAME cli_toolhead_clearance
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_toolhead_clearance.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON})
+set_tests_properties(cli_toolhead_clearance PROPERTIES
+    LABELS "CLI;RequiresApp"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 600)
+
+# ORCA headless-cli: calibration
+add_test(NAME cli_calibration
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_calibration.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON})
+set_tests_properties(cli_calibration PROPERTIES
+    LABELS "CLI;RequiresApp"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 900)
+
+add_test(NAME cli_z_pins
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_z_pins.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON}
+        ${CMAKE_SOURCE_DIR}/resources/profiles/BBL)
+set_tests_properties(cli_z_pins PROPERTIES
+    LABELS "CLI;RequiresApp"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 900)

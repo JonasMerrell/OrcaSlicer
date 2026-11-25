@@ -83,6 +83,8 @@ set(lisbslic3r_sources
     BlacklistedLibraryCheck.hpp
     BoostPolygonTraits.hpp
     BoundingBox.cpp
+    BrickLayers.cpp
+    BrickLayers.hpp
     BoundingBox.hpp
     BridgeDetector.cpp
     BridgeDetector.hpp
@@ -116,6 +118,8 @@ set(lisbslic3r_sources
     ConnectedBodies.cpp
     ConnectedBodies.hpp
     ContourZ.cpp
+    NonplanarInfill.cpp
+    NonplanarInfill.hpp
     CustomGCode.cpp
     CustomGCode.hpp
     CutUtils.cpp
@@ -149,6 +153,10 @@ set(lisbslic3r_sources
     WaveOverhangs/WaveStaircase.cpp
     WaveOverhangs/WaveStaircase.hpp
     WaveOverhangs/WaveStaircasePrint.cpp
+    ZPins/ZPins.cpp
+    ZPins/ZPins.hpp
+    Clearance/ToolheadClearance.cpp
+    Clearance/ToolheadClearance.hpp
     ExtrusionSimulator.cpp
     ExtrusionSimulator.hpp
     FaceDetector.cpp
@@ -226,6 +234,8 @@ set(lisbslic3r_sources
     Format/ImportNames.cpp
     Format/ImportNames.hpp
     Format/AssembleList.cpp
+    Format/CliJob.cpp
+    Format/CliJob.hpp
     Format/AssembleList.hpp
     Format/DRC.cpp
     Format/DRC.hpp
@@ -422,6 +432,8 @@ set(lisbslic3r_sources
     PolygonTrimmer.hpp
     Polyline.cpp
     Polyline.hpp
+    CliOptionCatalog.cpp
+    CliOptionCatalog.hpp
     PresetBundle.cpp
     PresetBundle.hpp
     PrinterBedAssets.hpp
