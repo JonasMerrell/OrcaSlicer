@@ -533,6 +533,54 @@
    "category": "Strength",
    "cli": "orca-slice --set bottom_surface_pattern=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
   },
+  "brick_layers": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "bool",
+   "category": "Strength",
+   "cli": "orca-slice --set brick_layers=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "brick_layers_first_wall": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "int",
+   "category": "Strength",
+   "cli": "orca-slice --set brick_layers_first_wall=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "brick_layers_flow_ratio": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set brick_layers_flow_ratio=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "brick_layers_start_layer": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "int",
+   "category": "Strength",
+   "cli": "orca-slice --set brick_layers_start_layer=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
   "bridge_acceleration": {
    "preset": "process",
    "scopes": [

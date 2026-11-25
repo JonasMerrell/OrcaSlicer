@@ -229,11 +229,16 @@ TEST_CASE("Brick layers leave Z-pin channel walls at the layer height", "[BrickL
     size_t       raised_moves = 0, near_pin_raised = 0;
     GCodeReader  reader;
     double       layer_z = 0.;
+    std::string  type;
     reader.parse_buffer(gcode, [&](GCodeReader &self, const GCodeReader::GCodeLine &line) {
         const std::string &raw = line.raw();
         if (raw.rfind(";Z:", 0) == 0)
             layer_z = std::stod(raw.substr(3));
-        else if (line.extruding(self) && line.dist_XY(self) > 0. && line.new_Z(self) > layer_z + 0.05) {
+        else if (raw.rfind(";TYPE:", 0) == 0)
+            type = raw.substr(6);
+        // Walls only: the pin fill itself circles inside the channel just above the layer (sparse infill).
+        else if (type.find("wall") != std::string::npos && line.extruding(self) && line.dist_XY(self) > 0. &&
+                 line.new_Z(self) > layer_z + 0.05) {
             ++raised_moves;
             const Vec2d a(self.x(), self.y()), b(line.new_X(self), line.new_Y(self));
             for (const Vec2d &p : pins)
