@@ -527,6 +527,9 @@ public:
     // nothing to lean on until this layer is bridged, so the G-code writer holds it back until the
     // infill is down. See defer_unsupported_loops() in PerimeterGenerator.cpp.
     bool print_after_infill = false;
+    // Orca: the wall of a Z-pin channel (ZPins.hpp). Brick layers leave it at the layer's height: the
+    // pin fill runs the nozzle over it there.
+    bool z_pin_channel = false;
 
     ExtrusionLoop(ExtrusionLoopRole role = elrDefault) : m_loop_role(role) {}
     ExtrusionLoop(const ExtrusionPaths &paths, ExtrusionLoopRole role = elrDefault) : paths(paths), m_loop_role(role) {}

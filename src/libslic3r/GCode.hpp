@@ -894,6 +894,8 @@ protected:
     int                                 m_wave_temp_tool = -1;
     int                                 m_wave_temp_restore = 0;
     std::string                         wave_temp_restore_gcode();
+    // Orca: fill the Z-pin channels planned for this object layer (PrintObject::generate_z_pins).
+    std::string                         extrude_z_pins(const Layer &layer);
 
     std::unique_ptr<CoolingBuffer>      m_cooling_buffer;
     std::unique_ptr<SpiralVase>         m_spiral_vase;
@@ -997,6 +999,8 @@ protected:
 
     double      calc_max_volumetric_speed(const double layer_height, const double line_width, const std::string co_str);
     std::string _extrude(const ExtrusionPath &path, const std::string &path_description = "", double speed = -1);
+    // Orca: flow factor of a point of a Z contoured path (ZAA or non-planar infill).
+    double z_contoured_extrusion_ratio(const ExtrusionPath &path, const Point3 &point) const;
     ExtrusionPaths belt_cut_at_band_edges(const ExtrusionPath &path, std::vector<std::vector<double>> &uncut_line_lengths) const;
     // _extrude() of a path that stays in one band above the belt (see belt_cut_at_band_edges()).
     std::string _extrude_piece(const ExtrusionPath &path, const std::string &path_description, double speed);

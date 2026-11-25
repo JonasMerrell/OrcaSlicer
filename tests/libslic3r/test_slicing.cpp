@@ -7,6 +7,7 @@
 #include <cstddef>
 
 #include "libslic3r/Slicing.hpp"
+#include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/libslic3r.h"
 
 using namespace Slic3r;
@@ -126,4 +127,39 @@ TEST_CASE("The layer height texture is filled up to the top of an object whose l
         INFO("second level cell " << cell << " of " << ncells1);
         CHECK(int(data1[(size_t(row) * cols1 + col) * 4 + 3]) == 255);
     }
+}
+
+TEST_CASE("A height range that does not set a layer height keeps the object's", "[Slicing][Regression]")
+{
+    // The CLI's assemble list may give a height range other settings only (the GUI always writes a layer
+    // height). That used to dereference a missing option.
+    SlicingParameters params;
+    params.object_print_z_min               = 0.;
+    params.object_print_z_max               = 20.;
+    params.object_print_z_uncompensated_max = 20.;
+    params.layer_height                     = 0.2;
+    params.first_object_layer_height        = 0.2;
+    params.min_layer_height                 = 0.07;
+    params.max_layer_height                 = 0.28;
+
+    ModelConfig no_height;
+    no_height.set_key_value("sparse_infill_density", new ConfigOptionPercent(40));
+    ModelConfig thin;
+    thin.set_key_value("layer_height", new ConfigOptionFloat(0.1));
+    t_layer_config_ranges ranges;
+    ranges.emplace(t_layer_height_range(0., 10.), no_height);
+    ranges.emplace(t_layer_height_range(10., 20.), thin);
+
+    const std::vector<coordf_t> profile = layer_height_profile_from_ranges(params, ranges);
+    REQUIRE(profile.size() >= 4);
+    // The layer height in force at z: the one of the last entry at or below it.
+    auto height_at = [&profile](coordf_t z) {
+        coordf_t h = profile[1];
+        for (size_t i = 0; i + 1 < profile.size(); i += 2)
+            if (profile[i] <= z + 1e-9)
+                h = profile[i + 1];
+        return h;
+    };
+    CHECK_THAT(height_at(5.), Catch::Matchers::WithinAbs(0.2, 1e-9));
+    CHECK_THAT(height_at(15.), Catch::Matchers::WithinAbs(0.1, 1e-9));
 }

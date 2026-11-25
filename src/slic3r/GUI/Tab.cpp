@@ -3107,6 +3107,11 @@ void TabPrint::build()
         optgroup->append_single_option_line("zaa_minimize_perimeter_height", "quality_settings_z_contouring#minimize-wall-height-angle");
         optgroup->append_single_option_line("zaa_min_z", "quality_settings_z_contouring#minimum-z-height");
         optgroup->append_single_option_line("zaa_dont_alternate_fill_direction", "quality_settings_z_contouring#dont-alternate-fill-direction");
+        optgroup->append_single_option_line("zaa_max_dz", "quality_settings_z_contouring");
+        optgroup->append_single_option_line("zaa_min_slope", "quality_settings_z_contouring");
+        optgroup->append_single_option_line("zaa_top_surfaces", "quality_settings_z_contouring");
+        optgroup->append_single_option_line("zaa_outer_walls", "quality_settings_z_contouring");
+        optgroup->append_single_option_line("zaa_inner_walls", "quality_settings_z_contouring");
         // Orca: it's not used yet, so hide it in UI for now
         // optgroup->append_single_option_line("ironing_expansion");
 
@@ -3321,6 +3326,30 @@ void TabPrint::build()
         optgroup->append_single_option_line("infill_combination_max_layer_height", "strength_settings_advanced#max-layer-height");
         optgroup->append_single_option_line("detect_narrow_internal_solid_infill", "strength_settings_advanced#detect-narrow-internal-solid-infill");
         optgroup->append_single_option_line("ensure_vertical_shell_thickness", "strength_settings_advanced#ensure-vertical-shell-thickness");
+
+        // Orca: Z-pinning (Experimental)
+        optgroup = page->new_optgroup(L("Z-pins"), L"param_advanced");
+        optgroup->append_single_option_line("z_pins");
+        optgroup->append_single_option_line("z_pin_diameter");
+        optgroup->append_single_option_line("z_pin_spacing");
+        optgroup->append_single_option_line("z_pin_pattern");
+        optgroup->append_single_option_line("z_pin_in_sparse_infill");
+        optgroup->append_single_option_line("z_pin_in_inner_walls");
+        optgroup->append_single_option_line("z_pin_in_solid_infill");
+        optgroup->append_single_option_line("z_pin_interval");
+        optgroup->append_single_option_line("z_pin_alternate");
+        optgroup->append_single_option_line("z_pin_overfill");
+        optgroup->append_single_option_line("z_pin_injection_speed");
+        optgroup->append_single_option_line("z_pin_injection_height");
+        optgroup->append_single_option_line("z_pin_dwell");
+        optgroup->append_single_option_line("z_pin_top_margin");
+        optgroup->append_single_option_line("z_pin_bottom_margin");
+
+        optgroup = page->new_optgroup(L("Non-planar infill"), L"param_infill");
+        for (const char *key : { "nonplanar_infill", "nonplanar_infill_amplitude", "nonplanar_infill_wavelength",
+                                 "nonplanar_infill_pattern", "nonplanar_infill_angle", "nonplanar_infill_phase_shift",
+                                 "nonplanar_infill_blend_layers", "nonplanar_infill_edge_blend", "nonplanar_infill_max_dz" })
+            optgroup->append_single_option_line(key);
 
     page = add_options_page(L("Speed"), "custom-gcode_speed"); // ORCA: icon only visible on placeholders
         optgroup = page->new_optgroup(L("First layer speed"), L"param_speed_first", 15);
@@ -5734,6 +5763,11 @@ void TabPrinter::build_fff()
         optgroup->append_single_option_line("extruder_clearance_dist_to_rod", "printer_basic_information_extruder_clearance#distance-to-rod");
         optgroup->append_single_option_line("extruder_clearance_height_to_rod", "printer_basic_information_extruder_clearance#height-to-rod");
         optgroup->append_single_option_line("extruder_clearance_height_to_lid", "printer_basic_information_extruder_clearance#height-to-lid");
+        // Fork: toolhead shape for non-planar collision checks.
+        optgroup->append_single_option_line("toolhead_clearance_enable");
+        optgroup->append_single_option_line("toolhead_clearance_profile");
+        optgroup->append_single_option_line("toolhead_clearance_mesh");
+        optgroup->append_single_option_line("toolhead_clearance_margin");
 
         optgroup = page->new_optgroup(L("Adaptive bed mesh"), "param_adaptive_mesh");
         optgroup->append_single_option_line("bed_mesh_min", "printer_basic_information_adaptive_bed_mesh#bed-mesh");

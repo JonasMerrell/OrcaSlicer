@@ -253,7 +253,7 @@ wxString get_string_value(const std::string& opt_key, const DynamicPrintConfig& 
         else if (pure_key == "head_wrap_detect_zone") {
             return get_thumbnails_string(config.option<ConfigOptionPoints>(pure_key)->values);
         }
-        else if (pure_key == "wrapping_exclude_area") {
+        else if (pure_key == "wrapping_exclude_area" || pure_key == "toolhead_clearance_profile") {
             return get_thumbnails_string(config.option<ConfigOptionPoints>(pure_key)->values);
         }
         Vec2d val = config.opt<ConfigOptionPoints>(pure_key)->get_at(opt_idx);

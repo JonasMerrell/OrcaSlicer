@@ -169,8 +169,12 @@ void collect(ExtrusionEntityCollection &collection, const Params &params, std::v
         if (auto *child = dynamic_cast<ExtrusionEntityCollection *>(entity)) {
             collect(*child, params, out);
             continue;
-        } else if (auto *loop = dynamic_cast<ExtrusionLoop *>(entity))
+        } else if (auto *loop = dynamic_cast<ExtrusionLoop *>(entity)) {
+            // Orca: Z-pin channel walls stay flat, the pin fill runs the nozzle over them.
+            if (loop->z_pin_channel)
+                continue;
             paths = &loop->paths;
+        }
         else if (auto *multipath = dynamic_cast<ExtrusionMultiPath *>(entity))
             paths = &multipath->paths;
         if (paths == nullptr || !is_raised_wall(entity->inset_idx, params.first_wall))

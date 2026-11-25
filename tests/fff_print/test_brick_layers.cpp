@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -197,4 +198,49 @@ TEST_CASE("Brick layers keep wave overhangs and leave their layers unraised", "[
             CHECK_FALSE(wave_layer.count(m.layer_z));
         }
     CHECK(raised_moves > 0);
+}
+
+TEST_CASE("Brick layers leave Z-pin channel walls at the layer height", "[BrickLayers][ZPins]")
+{
+    // The pin fill circles inside the channel with the nozzle just above the layer, so a raised channel
+    // wall would be in its way. Everything else keeps its bricks.
+    const std::string gcode = slice_cube(true, {
+        { "z_pins", "1" },
+        { "z_pin_diameter", "1.5" },
+        { "z_pin_spacing", "6" },
+        { "z_pin_interval", "8" },
+    });
+    std::vector<Vec2d> pins;
+    {
+        const std::regex re(R"(; Z_PIN_INJECT X([-\d.]+) Y([-\d.]+))");
+        std::smatch      m;
+        std::string      rest = gcode;
+        while (std::regex_search(rest, m, re)) {
+            const Vec2d p(std::stod(m[1]), std::stod(m[2]));
+            if (std::none_of(pins.begin(), pins.end(), [&p](const Vec2d &q) { return (p - q).norm() < 0.01; }))
+                pins.push_back(p);
+            rest = m.suffix();
+        }
+    }
+    REQUIRE(!pins.empty());
+
+    // Channel wall centre line: pin radius + half a line; anything raised must stay a line width beyond it.
+    const double keep_out = 0.75 + 0.45 + 0.2;
+    size_t       raised_moves = 0, near_pin_raised = 0;
+    GCodeReader  reader;
+    double       layer_z = 0.;
+    reader.parse_buffer(gcode, [&](GCodeReader &self, const GCodeReader::GCodeLine &line) {
+        const std::string &raw = line.raw();
+        if (raw.rfind(";Z:", 0) == 0)
+            layer_z = std::stod(raw.substr(3));
+        else if (line.extruding(self) && line.dist_XY(self) > 0. && line.new_Z(self) > layer_z + 0.05) {
+            ++raised_moves;
+            const Vec2d a(self.x(), self.y()), b(line.new_X(self), line.new_Y(self));
+            for (const Vec2d &p : pins)
+                if ((a - p).norm() < keep_out || (b - p).norm() < keep_out)
+                    ++near_pin_raised;
+        }
+    });
+    CHECK(raised_moves > 0);
+    CHECK(near_pin_raised == 0);
 }

@@ -25,6 +25,7 @@ add_executable(${_TEST_NAME}_tests
 	test_multifilament.cpp
 	test_multimaterial_segmentation.cpp
 	test_painted_modifier.cpp
+	test_nonplanar_infill.cpp
 	test_perimeters.cpp
 	# Seam geometry and pipeline regressions share the existing Print fixtures.
 	test_precise_seam.cpp
@@ -36,6 +37,7 @@ add_executable(${_TEST_NAME}_tests
 	test_slicing_pipeline_hook.cpp
 	test_spiral_vase.cpp
 	test_brick_layers.cpp
+	test_z_pins.cpp
 	test_support_material.cpp
 	test_texture_displacement.cpp
 	test_tree_support.cpp
