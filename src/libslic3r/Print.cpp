@@ -506,6 +506,15 @@ bool Print::invalidate_state_by_config_options(const ConfigOptionResolver & /* n
                opt_key == "belt_support_floor_offset") {
             osteps.emplace_back(posSupportMaterial);
         } else if (
+               opt_key == "toolhead_clearance_enable"
+            || opt_key == "toolhead_clearance_profile"
+            || opt_key == "toolhead_clearance_mesh"
+            || opt_key == "toolhead_clearance_margin") {
+            // Orca: Z contouring clamps to the toolhead clearance. It moves the paths in place, so they have to be
+            // regenerated (posPerimeters invalidates posInfill and posContouring after it), then exported again.
+            osteps.emplace_back(posPerimeters);
+            steps.emplace_back(psGCodeExport);
+        } else if (
                opt_key == "print_sequence"
             || opt_key == "filament_type"
             || opt_key == "chamber_temperature"

@@ -7717,6 +7717,42 @@
    "category": "Advanced",
    "cli": "orca-slice --set toolchange_ordering=V"
   },
+  "toolhead_clearance_enable": {
+   "preset": "printer",
+   "scopes": [
+    "global"
+   ],
+   "type": "bool",
+   "category": "",
+   "cli": "orca-slice --set toolhead_clearance_enable=V"
+  },
+  "toolhead_clearance_margin": {
+   "preset": "printer",
+   "scopes": [
+    "global"
+   ],
+   "type": "float",
+   "category": "",
+   "cli": "orca-slice --set toolhead_clearance_margin=V"
+  },
+  "toolhead_clearance_mesh": {
+   "preset": "printer",
+   "scopes": [
+    "global"
+   ],
+   "type": "string",
+   "category": "",
+   "cli": "orca-slice --set toolhead_clearance_mesh=V"
+  },
+  "toolhead_clearance_profile": {
+   "preset": "printer",
+   "scopes": [
+    "global"
+   ],
+   "type": "points",
+   "category": "",
+   "cli": "orca-slice --set toolhead_clearance_profile=V / --set toolhead_clearance_profile[N]=V (extruder N)"
+  },
   "top_bottom_infill_wall_overlap": {
    "preset": "process",
    "scopes": [
@@ -9047,6 +9083,42 @@
    "category": "Quality",
    "cli": "orca-slice --set zaa_enabled=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
   },
+  "zaa_inner_walls": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "bool",
+   "category": "Quality",
+   "cli": "orca-slice --set zaa_inner_walls=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "zaa_max_dz": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Quality",
+   "cli": "orca-slice --set zaa_max_dz=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "zaa_min_slope": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Quality",
+   "cli": "orca-slice --set zaa_min_slope=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
   "zaa_min_z": {
    "preset": "process",
    "scopes": [
@@ -9070,6 +9142,30 @@
    "type": "float",
    "category": "Quality",
    "cli": "orca-slice --set zaa_minimize_perimeter_height=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "zaa_outer_walls": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "bool",
+   "category": "Quality",
+   "cli": "orca-slice --set zaa_outer_walls=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "zaa_top_surfaces": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "bool",
+   "category": "Quality",
+   "cli": "orca-slice --set zaa_top_surfaces=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
   }
  },
  "cli_options": [
@@ -9083,6 +9179,7 @@
   "avoid_extrusion_cali_region",
   "calib",
   "calib_params",
+  "check_toolhead_clearance",
   "clone_objects",
   "convert_unit",
   "datadir",

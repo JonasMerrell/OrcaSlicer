@@ -2873,6 +2873,41 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->set_default_value(new ConfigOptionFloat(40));
 
+    // Fork: toolhead clearance for non-planar printing.
+    def = this->add("toolhead_clearance_enable", coBool);
+    def->label = L("Toolhead clearance check");
+    def->tooltip = L("Check non-planar moves against the already printed part using the toolhead shape below. "
+                     "Non-planar features (Z anti-aliasing, non-planar infill) limit how far the nozzle may dip, "
+                     "and the finished G-code is scanned for toolhead collisions. Has no effect on planar prints.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("toolhead_clearance_profile", coPoints);
+    def->label = L("Toolhead clearance profile");
+    def->tooltip = L("Underside of the toolhead as a stepped cone around the nozzle, as \"radius x height\" pairs in mm: "
+                     "within each radius from the nozzle axis (beyond the previous one) nothing hangs lower than that height "
+                     "above the nozzle tip. A last step with a large radius (e.g. 1000x30) models the gantry. "
+                     "Example: 0.5x0, 4x1.6, 45x1.1, 1000x30");
+    def->mode = comAdvanced;
+    def->gui_type = ConfigOptionDef::GUIType::one_string;
+    def->set_default_value(new ConfigOptionPoints());
+
+    def = this->add("toolhead_clearance_mesh", coString);
+    def->label = L("Toolhead clearance mesh");
+    def->tooltip = L("Optional STL or OBJ of the toolhead in the nozzle frame (nozzle tip at the origin, printer X/Y/Z axes). "
+                     "Where both are set, the lower of the mesh and the profile is used.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionString(""));
+
+    def = this->add("toolhead_clearance_margin", coFloat);
+    def->label = L("Toolhead clearance margin");
+    def->tooltip = L("Extra gap kept between the toolhead and the printed part, on top of the profile or mesh. "
+                     "It never applies to the nozzle tip itself.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.2));
+
     def = this->add("nozzle_height", coFloat);
     def->label = L("Nozzle height");
     def->tooltip = L("The height of nozzle tip.");
@@ -5422,6 +5457,51 @@ void PrintConfigDef::init_fff_params()
     def->max      = 2;
     def->mode     = comExpert;
     def->set_default_value(new ConfigOptionFloat(0.3));
+    def = this->add("zaa_max_dz", coFloat);
+    def->label    = L("Maximum Z deviation");
+    def->category = L("Quality");
+    def->tooltip  = L("The farthest Z contouring may move the nozzle away from the layer's nominal height, up or down.\n"
+                      "It is never more than one layer height, whatever this is set to, so the nozzle stays inside "
+                      "the layer it prints and the toolhead keeps the clearance of planar printing.\n"
+                      "Set to 0 to allow a full layer height.");
+    def->sidetext = L("mm");	// millimeters, CIS languages need translation
+    def->min      = 0;
+    def->max      = 10;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("zaa_min_slope", coFloat);
+    def->label    = L("Minimum slope");
+    def->category = L("Quality");
+    def->tooltip  = L("Only contour where the model surface is at least this steep (degrees from horizontal). "
+                      "Flatter areas are printed at the layer's nominal height.\n"
+                      "Set to 0 to contour every top surface.");
+    def->sidetext = u8"°";	// degrees, don't need translation
+    def->min      = 0;
+    def->max      = 90;
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("zaa_top_surfaces", coBool);
+    def->label    = L("Contour top surfaces");
+    def->category = L("Quality");
+    def->tooltip  = L("Contour top surface infill and ironing.");
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("zaa_outer_walls", coBool);
+    def->label    = L("Contour outer walls");
+    def->category = L("Quality");
+    def->tooltip  = L("Lower outer walls under a sloped top surface to the model surface.");
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("zaa_inner_walls", coBool);
+    def->label    = L("Contour inner walls");
+    def->category = L("Quality");
+    def->tooltip  = L("Lower inner walls under a sloped top surface to the model surface.");
+    def->mode     = comExpert;
+    def->set_default_value(new ConfigOptionBool(true));
 
     def = this->add("layer_change_gcode", coString);
     def->label = L("Layer change G-code");
@@ -13480,6 +13560,16 @@ CLIActionsConfigDef::CLIActionsConfigDef()
     def->label = L("Output Model Info");
     def->tooltip = L("This outputs the model\u2019s information.");
     def->set_default_value(new ConfigOptionBool(false));
+
+    // Fork: check finished G-code for toolhead collisions with the part it prints (non-planar).
+    def = this->add("check_toolhead_clearance", coString);
+    def->label = L("Check toolhead clearance of G-code");
+    def->tooltip = L("Replay a G-code file, build the printed part from its extrusions and report every move where the toolhead "
+                     "(toolhead_clearance_profile / toolhead_clearance_mesh from --load-settings) hits what was printed before it. "
+                     "Prints a JSON report to stdout (and <name>.clearance.json in --outputdir), then exits. "
+                     "Runs whether or not toolhead_clearance_enable is set.");
+    def->cli_params = "file.gcode";
+    def->set_default_value(new ConfigOptionString());
 
     def = this->add("inspect_mesh", coBool);
     def->label = L("Inspect mesh (JSON to stdout)");

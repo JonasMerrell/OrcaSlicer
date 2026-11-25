@@ -1729,6 +1729,11 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionInt,                          nonplanar_infill_blend_layers))
     ((ConfigOptionFloat,                        nonplanar_infill_edge_blend))
     ((ConfigOptionFloat,                        nonplanar_infill_max_dz))
+    ((ConfigOptionFloat, zaa_max_dz))
+    ((ConfigOptionFloat, zaa_min_slope))
+    ((ConfigOptionBool, zaa_top_surfaces))
+    ((ConfigOptionBool, zaa_outer_walls))
+    ((ConfigOptionBool, zaa_inner_walls))
     )
 
 PRINT_CONFIG_CLASS_DEFINE(
@@ -2116,6 +2121,11 @@ PRINT_CONFIG_CLASS_DERIVED_DEFINE(
     ((ConfigOptionFloat,              extruder_clearance_height_to_lid))//BBS
     ((ConfigOptionFloat,              extruder_clearance_radius))
     ((ConfigOptionFloat,              nozzle_height))
+    // Fork: toolhead clearance for non-planar printing (Clearance/ToolheadClearance.hpp).
+    ((ConfigOptionBool,               toolhead_clearance_enable))
+    ((ConfigOptionPoints,             toolhead_clearance_profile))
+    ((ConfigOptionString,             toolhead_clearance_mesh))
+    ((ConfigOptionFloat,              toolhead_clearance_margin))
     ((ConfigOptionStrings,            extruder_colour))
     ((ConfigOptionPoints,             extruder_offset))
     ((ConfigOptionBools,              reduce_fan_stop_start_freq))
