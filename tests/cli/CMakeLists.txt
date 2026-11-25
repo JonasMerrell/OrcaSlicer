@@ -78,6 +78,13 @@ set_tests_properties(cli_nozzle_volume_type PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 900)
 
+add_test(NAME cli_brick_layers
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_brick_layers.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON})
+set_tests_properties(cli_brick_layers PROPERTIES
+    LABELS "CLI;RequiresApp;BrickLayers"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 600)
+
 add_test(NAME cli_nonplanar_infill
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_nonplanar_infill.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON})
 set_tests_properties(cli_nonplanar_infill PROPERTIES

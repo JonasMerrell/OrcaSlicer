@@ -16,6 +16,7 @@
 #include "Geometry.hpp"
 #include "I18N.hpp"
 #include "Layer.hpp"
+#include "BrickLayers.hpp"
 #include "NonplanarInfill.hpp"
 #include "Clearance/ToolheadClearance.hpp"
 #include "MutablePolygon.hpp"
@@ -648,6 +649,12 @@ void PrintObject::make_perimeters()
 
     // Orca: Z-pins need the walls and the infill areas of every layer, and are redone with them.
     this->generate_z_pins();
+    m_print->throw_if_canceled();
+
+    // Orca: brick layers raise alternate inner walls by half a layer; needs the walls of every layer.
+    // After the Z-pins: it sees the walls the channels cut, and leaves the channel walls flat
+    // (the pin fill runs the nozzle over them at the layer's height).
+    BrickLayers::apply(*this);
     m_print->throw_if_canceled();
 
     this->set_done(posPerimeters);
@@ -1654,6 +1661,10 @@ bool PrintObject::invalidate_state_by_config_options(
             }
         } else if (
                opt_key == "wall_loops"
+            || opt_key == "brick_layers"
+            || opt_key == "brick_layers_first_wall"
+            || opt_key == "brick_layers_start_layer"
+            || opt_key == "brick_layers_flow_ratio"
             || opt_key == "alternate_extra_wall"
             || opt_key == "top_one_wall_type"
             || opt_key == "min_width_top_surface"

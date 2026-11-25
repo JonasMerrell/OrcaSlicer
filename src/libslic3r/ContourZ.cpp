@@ -78,6 +78,9 @@ static bool contour_extrusion_path(LayerRegion *region, const sla::IndexedMesh &
     if (path.role() != erTopSolidInfill && path.role() != erIroning && path.role() != erExternalPerimeter && path.role() != erPerimeter) {
 		return false;
 	}
+	// Orca: already Z-offset (brick layers raise alternate inner walls); keep that height.
+	if (path.z_contoured)
+		return false;
 	
 	Layer *layer = region->layer();
 	coordf_t mesh_slice_z = layer->slice_z + mesh.ground_level();

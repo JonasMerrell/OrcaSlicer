@@ -1372,6 +1372,14 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
     std::string printer_type = wxGetApp().preset_bundle->printers.get_edited_preset().get_printer_type(wxGetApp().preset_bundle);
     toggle_line("enable_wrapping_detection", DevPrinterConfigUtil::support_wrapping_detection(printer_type), -1, _L("The selected printer does not support wrapping detection."));
 
+    // Orca: brick layers. The tunables only show while the feature is on; spiral vase has one wall.
+    {
+        const bool brick = config->opt_bool("brick_layers");
+        toggle_field("brick_layers", !config->opt_bool("spiral_mode"), -1, _L("Brick layers are unavailable in spiral vase mode."));
+        for (const char *key : {"brick_layers_first_wall", "brick_layers_start_layer", "brick_layers_flow_ratio"})
+            toggle_line(key, brick);
+    }
+
     // Orca: non-planar infill tunables only show with the master toggle on.
     {
         const bool np_enabled = config->opt_bool("nonplanar_infill");

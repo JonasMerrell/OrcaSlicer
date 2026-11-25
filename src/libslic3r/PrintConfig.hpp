@@ -1604,6 +1604,11 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionBool, unsupported_wall_last))
     ((ConfigOptionInt, outer_wall_filament_id))
     ((ConfigOptionInt, inner_wall_filament_id))
+    // Brick layers: alternate inner walls raised by half a layer height so the walls interlock
+    ((ConfigOptionBool,                 brick_layers))
+    ((ConfigOptionInt,                  brick_layers_first_wall))
+    ((ConfigOptionInt,                  brick_layers_start_layer))
+    ((ConfigOptionFloat,                brick_layers_flow_ratio))
     // Wave Overhangs
     ((ConfigOptionBool,                 wave_overhangs))
     ((ConfigOptionBool,                 wave_overhangs_instead_of_bridges))

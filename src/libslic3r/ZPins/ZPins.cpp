@@ -408,6 +408,7 @@ void PrintObject::generate_z_pins()
                 path.polyline = Polyline3(ring.split_at_first_point());
                 auto loop = new ExtrusionLoop(std::move(path), elrHole);
                 loop->inset_idx = 1;
+                loop->z_pin_channel = true;
                 auto coll = new ExtrusionEntityCollection();
                 coll->entities.emplace_back(loop);
                 owner->perimeters.entities.emplace_back(coll);
