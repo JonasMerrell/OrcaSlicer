@@ -116,6 +116,8 @@ set(lisbslic3r_sources
     ConnectedBodies.cpp
     ConnectedBodies.hpp
     ContourZ.cpp
+    NonplanarInfill.cpp
+    NonplanarInfill.hpp
     CustomGCode.cpp
     CustomGCode.hpp
     CutUtils.cpp
