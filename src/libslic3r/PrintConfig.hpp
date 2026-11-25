@@ -1609,6 +1609,7 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionInt,                       wave_overhang_staircase_layers))
     ((ConfigOptionFloat,                     wave_overhang_staircase_stagger))
     ((ConfigOptionInt,                       wave_overhang_staircase_rings_per_step))
+    ((ConfigOptionBool,                      wave_overhang_staircase_walls))
     ((ConfigOptionEnum<WaveStaircasePattern>, wave_overhang_staircase_pattern))
     ((ConfigOptionFloat,                     wave_overhang_staircase_max_height))
     ((ConfigOptionFloat,                     wave_overhang_staircase_travel_lift))

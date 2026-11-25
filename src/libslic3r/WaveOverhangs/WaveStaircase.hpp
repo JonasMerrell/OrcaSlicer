@@ -42,6 +42,9 @@ struct Params
     // Ring spacing (mm) of the distance field the band advances along (the wave line spacing).
     double      ring_spacing   = 0.35;
     StepPattern pattern        = StepPattern::Waves;
+    // Print the walls of the upper layers over the overhang inside the band as well, so the steps
+    // reach the free edge instead of stopping a stagger short of the walls printed later.
+    bool        walls          = true;
 };
 
 // One upper layer L+k (k >= 1) of the band.
@@ -52,6 +55,9 @@ struct StepLayer
     Polygons slices;        // the whole layer L+k (all islands, all regions)
     Flow     flow;          // flow of the step's lines (solid infill of L+k)
     float    angle  = 0.f;  // fill angle (radians) of the line patterns
+    // Walls (and gap fill) of L+k near the island, as single paths, that the band may take over:
+    // the parts within the step's wall clip (wall_clip()) print in the band, the rest stays.
+    ExtrusionPaths walls;
 };
 
 struct BandInput
@@ -79,7 +85,16 @@ struct BandResult
 // printed before the band) and keeps `stagger + line width` away from anything printed
 // later at a lower height, so the nozzle tip never meets a higher step: when layer L+j is
 // printed normally next to a step of L+k (k > j), there is room for the tip.
+//
+// With walls (Params::walls and StepLayer::walls), a step also covers the walls of its layer where
+// they lie over the step below, and the band prints those parts of them: at the free edge nothing
+// is printed later at a lower height any more, so the steps reach the edge.
 std::vector<Polygons> step_regions(const BandInput &in, const Params &params);
+
+// The walls of step k the band prints are the parts of StepLayer::walls inside this area (their
+// centrelines are at least a little less than half a line width inside the step region). The rest
+// of each wall stays in its layer.
+Polygons wall_clip(const Polygons &step_region, const BandInput &in);
 
 BandResult build_band(const BandInput &in, const Params &params);
 

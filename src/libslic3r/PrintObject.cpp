@@ -1574,6 +1574,7 @@ bool PrintObject::invalidate_state_by_config_options(
             || opt_key == "wave_overhang_staircase_layers"
             || opt_key == "wave_overhang_staircase_stagger"
             || opt_key == "wave_overhang_staircase_rings_per_step"
+            || opt_key == "wave_overhang_staircase_walls"
             || opt_key == "wave_overhang_staircase_pattern"
             || opt_key == "wave_overhang_staircase_max_height") {
             // Orca: the staircase pass runs in prepare_infill and undoes its previous run.

@@ -110,6 +110,7 @@ void LayerRegion::slices_to_fill_surfaces_clipped()
 void LayerRegion::make_perimeters(const SurfaceCollection &slices, const LayerRegionPtrs &compatible_regions, SurfaceCollection* fill_surfaces, ExPolygons* fill_no_overlap)
 {
     this->perimeters.clear();
+    this->wave_staircase_original.reset();
     this->thin_fills.clear();
 
     const PrintConfig       &print_config  = this->layer()->object()->print()->config();

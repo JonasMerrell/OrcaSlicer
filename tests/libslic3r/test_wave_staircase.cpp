@@ -174,3 +174,83 @@ TEST_CASE("staircase clearance check flags a lower line next to a higher one", "
     CHECK(ok.violations == 0);
     CHECK(ok.min_clearance == Catch::Approx(3.0 - 0.21).margin(0.02));
 }
+
+namespace {
+
+// Two wall loops of a 36 x 20 mm island, as the perimeter generator would print them on L+k.
+ExtrusionPaths shelf_walls()
+{
+    ExtrusionPaths out;
+    const double w = 0.45;
+    for (int i = 0; i < 2; ++i) {
+        const double inset = w * (0.5 + i);
+        Polygon loop = rect_mm(inset, inset, 36. - inset, 20. - inset);
+        ExtrusionPath p(i == 0 ? erExternalPerimeter : erPerimeter, 0.08, float(w), 0.2f);
+        p.polyline = Polyline3(loop.split_at_first_point());
+        out.push_back(p);
+    }
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("staircase with walls reaches the free edge and leaves every wall printed once", "[WaveOverhangs][Staircase]")
+{
+    const double stagger = 1.6;
+    WS::BandInput in = shelf(3, stagger);
+    for (WS::StepLayer &s : in.steps)
+        s.walls = shelf_walls();
+    WS::Params prm = params(3, stagger);
+
+    // Without walls the top step stops short of the free edge (x = 36); with them it reaches it.
+    WS::Params no_walls = prm;
+    no_walls.walls = false;
+    const std::vector<Polygons> short_regions = WS::step_regions(in, no_walls);
+    const std::vector<Polygons> regions       = WS::step_regions(in, prm);
+    REQUIRE(short_regions.size() == 2);
+    REQUIRE(regions.size() == 2);
+    CHECK(unscale<double>(get_extents(short_regions[1]).max.x()) < 35.);
+    for (const Polygons &r : regions) {
+        CHECK(unscale<double>(get_extents(r).max.x()) > 35.9);
+        CHECK(unscale<double>(get_extents(r).min.y()) < 0.1);
+        CHECK(unscale<double>(get_extents(r).max.y()) > 19.9);
+    }
+    // Each step still stands on the one below.
+    CHECK(area(diff(regions[1], regions[0])) < scale_(0.01) * scale_(0.01));
+
+    WS::BandResult band = WS::build_band(in, prm);
+    REQUIRE_FALSE(band.paths.empty());
+    double wall_in_band[3] = { 0., 0., 0. };
+    double top_x = 0.;
+    for (const ExtrusionPath &p : band.paths) {
+        if (p.staircase_step > 0 && is_perimeter(p.role()))
+            wall_in_band[p.staircase_step] += unscale<double>(p.length());
+        if (p.staircase_step == 2)
+            top_x = std::max(top_x, unscale<double>(get_extents(p.polyline.to_polyline()).max.x()));
+    }
+    CHECK(wall_in_band[1] > 50.);
+    CHECK(wall_in_band[2] > 50.);
+    CHECK(top_x > 35.);
+
+    // The band's part of each wall plus what stays in the layer is the whole wall.
+    ExtrusionPaths sequence = band.paths;
+    for (size_t k = 0; k < band.step_regions.size(); ++k) {
+        const Polygons clip  = WS::wall_clip(band.step_regions[k], in);
+        double         total = 0., left = 0.;
+        for (const ExtrusionPath &w : in.steps[k].walls) {
+            total += unscale<double>(w.length());
+            for (const Polyline &pl : diff_pl(Polylines{ w.polyline.to_polyline() }, clip)) {
+                left += unscale<double>(pl.length());
+                // Layer L+k prints the rest of its walls after the band, at its own height.
+                ExtrusionPath rest(Polyline3(pl, coord_t(scale_(in.steps[k].dz))), w);
+                rest.z_contoured = true;
+                sequence.push_back(rest);
+            }
+        }
+        CHECK(wall_in_band[k + 1] + left == Catch::Approx(total).margin(1.));
+    }
+    // Nothing is printed next to higher material, the walls printed afterwards included.
+    const WS::ClearanceReport rep = WS::check_sequence(sequence, stagger);
+    CHECK(rep.violations == 0);
+    CHECK(rep.min_clearance >= stagger - 0.1);
+}

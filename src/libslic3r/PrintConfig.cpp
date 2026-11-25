@@ -6261,6 +6261,15 @@ void PrintConfigDef::init_fff_params()
     def->max = 50;
     def->set_default_value(new ConfigOptionInt(3));
 
+    def = this->add("wave_overhang_staircase_walls", coBool);
+    def->label = L("Staircase walls");
+    def->category = L("Strength");
+    def->tooltip = L("Print the walls of the upper layers over the overhang inside the staircase too, so every "
+                     "step reaches the free edge. Without it the steps stop short of the walls the next layers "
+                     "print later, and the edge strip is printed onto the cooled wave.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
+
     def = this->add("wave_overhang_staircase_pattern", coEnum);
     def->label = L("Staircase upper pattern");
     def->category = L("Strength");

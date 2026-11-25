@@ -1414,6 +1414,7 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
         std::string("wave_overhang_staircase_layers"),
         std::string("wave_overhang_staircase_stagger"),
         std::string("wave_overhang_staircase_rings_per_step"),
+        std::string("wave_overhang_staircase_walls"),
         std::string("wave_overhang_staircase_pattern"),
         std::string("wave_overhang_staircase_max_height"),
         std::string("wave_overhang_staircase_travel_lift"),

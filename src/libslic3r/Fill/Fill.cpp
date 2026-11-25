@@ -977,6 +977,9 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_p
 		        FlowRole extrusion_role = surface.is_top() ? frTopSolidInfill : (surface.is_solid() ? frSolidInfill : frInfill);
 		        bool     is_bridge 	    = layer.id() > 0 && surface.is_bridge();
 		        params.extruder 	 = layerm.region().extruder(extrusion_role);
+                // Orca: wave floor tags are per surface; params is reused across the loop.
+                params.wave_overhang_floor          = false;
+                params.wave_overhang_floor_distance = 0;
 		        params.pattern 		 = region_config.sparse_infill_pattern.value;
 		        params.density       = float(region_config.sparse_infill_density);
                 params.lateral_lattice_angle_1 = region_config.lateral_lattice_angle_1;
@@ -1044,6 +1047,36 @@ std::vector<SurfaceFill> group_fills(const Layer &layer, LockRegionParam &lock_p
                                         params.wave_overhang_floor_distance = static_cast<int8_t>(std::min(k, 127));
                                     }
                                 }
+                            }
+                        }
+                        // Orca: ordinary (non-Hilbert) wave floor. With wave_overhang_floor_print_speed
+                        // set, the solid infill directly above a wave strip (1..N layers up) prints at
+                        // that speed; the rest of the layer keeps its normal speed. The floor-layer
+                        // authority pass already split the fill surfaces at the strip's outline, so a
+                        // surface is either above a strip or not. Distance: the nearest strip below.
+                        if (! params.wave_overhang_floor && region_config.wave_overhangs.value
+                            && region_config.wave_overhang_floor_print_speed.value > 0
+                            && surface.surface_type == stInternalSolid
+                            && ! layer.wave_overhang_shadow_polygons.empty()) {
+                            const int     floor_layers = std::max(0, region_config.wave_overhang_floor_layers.value);
+                            const Polygons surf_polys  = to_polygons(surface.expolygon);
+                            const double   surf_area   = std::abs(area(surf_polys));
+                            Polygons       below_all;
+                            int            nearest = 0;
+                            const Layer   *cur     = &layer;
+                            for (int d = 1; d <= floor_layers; ++d) {
+                                cur = cur->lower_layer;
+                                if (! cur) break;
+                                if (cur->wave_overhang_floor_polygons.empty()) continue;
+                                if (nearest == 0 && ! intersection(surf_polys, cur->wave_overhang_floor_polygons).empty())
+                                    nearest = d;
+                                append(below_all, cur->wave_overhang_floor_polygons);
+                            }
+                            // Inside the strips, up to a sliver (the authority pass's safety offsets).
+                            if (nearest > 0 && surf_area > 0.
+                                && std::abs(area(diff(surf_polys, expand(below_all, float(scale_(0.05)))))) < 0.01 * surf_area) {
+                                params.wave_overhang_floor          = true;
+                                params.wave_overhang_floor_distance = static_cast<int8_t>(std::min(nearest, 127));
                             }
                         }
                     } else {
