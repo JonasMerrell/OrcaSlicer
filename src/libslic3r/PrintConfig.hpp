@@ -430,6 +430,12 @@ enum class SeamScarfType {
     All,
 };
 
+// Orca: Z-pin grid
+enum class ZPinPattern {
+    zppGrid,
+    zppStaggered,
+};
+
 // Orca
 enum EnsureVerticalShellThickness {
     evstNone,
@@ -825,6 +831,7 @@ extern std::vector<std::string> save_extruder_nozzle_stats_to_string(const std::
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(PrinterTechnology)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(GCodeFlavor)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(FuzzySkinType)
+CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(ZPinPattern)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(FuzzySkinMode)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(TopSurfaceExpansionDirection)
 CONFIG_OPTION_ENUM_DECLARE_STATIC_MAPS(WipeTowerType)
@@ -1467,6 +1474,23 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionInt,  interlocking_beam_layer_count))
     ((ConfigOptionInt,  interlocking_depth))
     ((ConfigOptionInt,  interlocking_boundary_avoidance))
+
+    // Orca: Z-pinning (ZPins/ZPins.cpp)
+    ((ConfigOptionBool,                z_pins))
+    ((ConfigOptionFloat,               z_pin_diameter))
+    ((ConfigOptionFloat,               z_pin_spacing))
+    ((ConfigOptionEnum<ZPinPattern>,   z_pin_pattern))
+    ((ConfigOptionBool,                z_pin_in_sparse_infill))
+    ((ConfigOptionBool,                z_pin_in_inner_walls))
+    ((ConfigOptionBool,                z_pin_in_solid_infill))
+    ((ConfigOptionInt,                 z_pin_interval))
+    ((ConfigOptionBool,                z_pin_alternate))
+    ((ConfigOptionPercent,             z_pin_overfill))
+    ((ConfigOptionFloat,               z_pin_injection_speed))
+    ((ConfigOptionFloat,               z_pin_injection_height))
+    ((ConfigOptionFloat,               z_pin_dwell))
+    ((ConfigOptionInt,                 z_pin_top_margin))
+    ((ConfigOptionInt,                 z_pin_bottom_margin))
 
     // Orca: internal use only
     ((ConfigOptionBool,  calib_flowrate_topinfill_special_order)) // ORCA: special flag for flow rate calibration

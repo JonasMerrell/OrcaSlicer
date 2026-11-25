@@ -1439,6 +1439,15 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
         std::string("wave_overhang_floor_aux_fan_speed"),
     })
         toggle_line(k, wo_floor_hilbert);
+
+    // Orca: Z-pins: the tunables only show when the feature is on.
+    if (config->has("z_pins")) {
+        const bool zp = config->opt_bool("z_pins");
+        for (const char *k : { "z_pin_diameter", "z_pin_spacing", "z_pin_pattern", "z_pin_in_sparse_infill", "z_pin_in_inner_walls",
+                               "z_pin_in_solid_infill", "z_pin_interval", "z_pin_alternate", "z_pin_overfill", "z_pin_injection_speed",
+                               "z_pin_injection_height", "z_pin_dwell", "z_pin_top_margin", "z_pin_bottom_margin" })
+            toggle_line(k, zp);
+    }
 }
 
 void ConfigManipulation::update_print_sla_config(DynamicPrintConfig* config, const bool is_global_config/* = false*/)

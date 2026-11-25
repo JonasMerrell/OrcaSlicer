@@ -3323,6 +3323,24 @@ void TabPrint::build()
         optgroup->append_single_option_line("detect_narrow_internal_solid_infill", "strength_settings_advanced#detect-narrow-internal-solid-infill");
         optgroup->append_single_option_line("ensure_vertical_shell_thickness", "strength_settings_advanced#ensure-vertical-shell-thickness");
 
+        // Orca: Z-pinning (Experimental)
+        optgroup = page->new_optgroup(L("Z-pins"), L"param_advanced");
+        optgroup->append_single_option_line("z_pins");
+        optgroup->append_single_option_line("z_pin_diameter");
+        optgroup->append_single_option_line("z_pin_spacing");
+        optgroup->append_single_option_line("z_pin_pattern");
+        optgroup->append_single_option_line("z_pin_in_sparse_infill");
+        optgroup->append_single_option_line("z_pin_in_inner_walls");
+        optgroup->append_single_option_line("z_pin_in_solid_infill");
+        optgroup->append_single_option_line("z_pin_interval");
+        optgroup->append_single_option_line("z_pin_alternate");
+        optgroup->append_single_option_line("z_pin_overfill");
+        optgroup->append_single_option_line("z_pin_injection_speed");
+        optgroup->append_single_option_line("z_pin_injection_height");
+        optgroup->append_single_option_line("z_pin_dwell");
+        optgroup->append_single_option_line("z_pin_top_margin");
+        optgroup->append_single_option_line("z_pin_bottom_margin");
+
         optgroup = page->new_optgroup(L("Non-planar infill"), L"param_infill");
         for (const char *key : { "nonplanar_infill", "nonplanar_infill_amplitude", "nonplanar_infill_wavelength",
                                  "nonplanar_infill_pattern", "nonplanar_infill_angle", "nonplanar_infill_phase_shift",

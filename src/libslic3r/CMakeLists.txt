@@ -148,6 +148,8 @@ set(lisbslic3r_sources
     ExtrusionEntity.hpp
     WaveOverhangs/WaveOverhangs.cpp
     WaveOverhangs/WaveOverhangs.hpp
+    ZPins/ZPins.cpp
+    ZPins/ZPins.hpp
     Clearance/ToolheadClearance.cpp
     Clearance/ToolheadClearance.hpp
     ExtrusionSimulator.cpp

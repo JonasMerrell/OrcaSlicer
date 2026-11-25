@@ -894,6 +894,8 @@ protected:
     int                                 m_wave_temp_tool = -1;
     int                                 m_wave_temp_restore = 0;
     std::string                         wave_temp_restore_gcode();
+    // Orca: fill the Z-pin channels planned for this object layer (PrintObject::generate_z_pins).
+    std::string                         extrude_z_pins(const Layer &layer);
 
     std::unique_ptr<CoolingBuffer>      m_cooling_buffer;
     std::unique_ptr<SpiralVase>         m_spiral_vase;

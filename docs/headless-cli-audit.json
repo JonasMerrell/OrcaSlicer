@@ -9059,6 +9059,156 @@
    "category": "",
    "cli": "orca-slice --set z_offset=V"
   },
+  "z_pin_alternate": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "bool",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_alternate=V; --set-object / job objects[].settings"
+  },
+  "z_pin_bottom_margin": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "int",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_bottom_margin=V; --set-object / job objects[].settings"
+  },
+  "z_pin_diameter": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_diameter=V; --set-object / job objects[].settings"
+  },
+  "z_pin_dwell": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_dwell=V; --set-object / job objects[].settings"
+  },
+  "z_pin_in_inner_walls": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "bool",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_in_inner_walls=V; --set-object / job objects[].settings"
+  },
+  "z_pin_in_solid_infill": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "bool",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_in_solid_infill=V; --set-object / job objects[].settings"
+  },
+  "z_pin_in_sparse_infill": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "bool",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_in_sparse_infill=V; --set-object / job objects[].settings"
+  },
+  "z_pin_injection_height": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_injection_height=V; --set-object / job objects[].settings"
+  },
+  "z_pin_injection_speed": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_injection_speed=V; --set-object / job objects[].settings"
+  },
+  "z_pin_interval": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "int",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_interval=V; --set-object / job objects[].settings"
+  },
+  "z_pin_overfill": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "percent",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_overfill=V; --set-object / job objects[].settings"
+  },
+  "z_pin_pattern": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "enum",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_pattern=V; --set-object / job objects[].settings"
+  },
+  "z_pin_spacing": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_spacing=V; --set-object / job objects[].settings"
+  },
+  "z_pin_top_margin": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "int",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pin_top_margin=V; --set-object / job objects[].settings"
+  },
+  "z_pins": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object"
+   ],
+   "type": "bool",
+   "category": "Strength",
+   "cli": "orca-slice --set z_pins=V; --set-object / job objects[].settings"
+  },
   "zaa_dont_alternate_fill_direction": {
    "preset": "process",
    "scopes": [

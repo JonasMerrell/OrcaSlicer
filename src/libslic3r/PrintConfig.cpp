@@ -304,6 +304,12 @@ static t_config_enum_values s_keys_map_FuzzySkinType {
 };
 CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(FuzzySkinType)
 
+static t_config_enum_values s_keys_map_ZPinPattern {
+    { "grid",      int(ZPinPattern::zppGrid) },
+    { "staggered", int(ZPinPattern::zppStaggered) },
+};
+CONFIG_OPTION_ENUM_DEFINE_STATIC_MAPS(ZPinPattern)
+
 static t_config_enum_values s_keys_map_NoiseType {
     { "classic",        int(NoiseType::Classic) },
     { "perlin",         int(NoiseType::Perlin) },
@@ -5217,6 +5223,156 @@ void PrintConfigDef::init_fff_params()
     def->category = L("Advanced");
     def->mode     = comAdvanced;
     def->set_default_value(new ConfigOptionInt(2));
+
+    // Orca: Z-pinning
+    def = this->add("z_pins", coBool);
+    def->label = L("Z-pins (Experimental)");
+    def->category = L("Strength");
+    def->tooltip = L("Leave small vertical channels through the part and, every few layers, park the nozzle over each "
+                     "channel and fill it with molten filament from above. The pins fuse across many layer lines, so "
+                     "the part gets much closer to its XY strength in Z. After Duty et al., \"Z-pinning approach for "
+                     "3D printing mechanically isotropic materials\" (Additive Manufacturing, 2019). The nozzle never "
+                     "goes below the current layer.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("z_pin_diameter", coFloat);
+    def->label = L("Pin diameter");
+    def->category = L("Strength");
+    def->tooltip = L("Diameter of the open channel. About three times the line width works (Duty et al.: 1.3 mm holes "
+                     "with 0.5 mm lines). The nozzle's flat must cover the hole for it to be filled from above.");
+    def->sidetext = L("mm");
+    def->min = 0.3;
+    def->max = 10;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(1.5));
+
+    def = this->add("z_pin_spacing", coFloat);
+    def->label = L("Pin spacing");
+    def->category = L("Strength");
+    def->tooltip = L("Distance between neighbouring pins. The grid is centred on the object.");
+    def->sidetext = L("mm");
+    def->min = 1;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(6));
+
+    def = this->add("z_pin_pattern", coEnum);
+    def->label = L("Pin pattern");
+    def->category = L("Strength");
+    def->tooltip = L("Grid: square grid. Staggered: every other row shifted by half the spacing (hexagonal).");
+    def->enum_keys_map = &ConfigOptionEnum<ZPinPattern>::get_enum_values();
+    def->enum_values.push_back("grid");
+    def->enum_values.push_back("staggered");
+    def->enum_labels.push_back(L("Grid"));
+    def->enum_labels.push_back(L("Staggered"));
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionEnum<ZPinPattern>(ZPinPattern::zppStaggered));
+
+    def = this->add("z_pin_in_sparse_infill", coBool);
+    def->label = L("Pins in infill");
+    def->category = L("Strength");
+    def->tooltip = L("Place pins in the infill. Each channel gets a one-line wall so the injected filament stays in it.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("z_pin_in_inner_walls", coBool);
+    def->label = L("Pins in inner walls");
+    def->category = L("Strength");
+    def->tooltip = L("Also place pins where they cross the inner walls. The walls are cut around the channel and the "
+                     "channel wall joins them. The outer wall is never cut.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("z_pin_in_solid_infill", coBool);
+    def->label = L("Pins in solid shells");
+    def->category = L("Strength");
+    def->tooltip = L("Let pins run on into the top and bottom shells, up to the pin-free margins. When off, the pins stop "
+                     "short of the shells (shell layers plus the margins stay pin-free).");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("z_pin_interval", coInt);
+    def->label = L("Fill interval");
+    def->category = L("Strength");
+    def->tooltip = L("Fill the channels every this many layers. Deep channels fill badly: the strand touches the wall, "
+                     "bridges and leaves a void (Duty et al. used 8 layers of 0.3 mm). Keep interval x layer height "
+                     "around 2-3 mm.");
+    def->sidetext = L("layers");
+    def->min = 2;
+    def->max = 100;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(10));
+
+    def = this->add("z_pin_alternate", coBool);
+    def->label = L("Alternate pin sets");
+    def->category = L("Strength");
+    def->tooltip = L("Fill neighbouring pins half an interval apart, so the joints between pin segments are staggered "
+                     "and never all on the same layer.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
+
+    def = this->add("z_pin_overfill", coPercent);
+    def->label = L("Pin overfill");
+    def->category = L("Strength");
+    def->tooltip = L("Injected volume as a share of the channel volume. A little over 100% presses the pin into the "
+                     "gaps of its wall; Duty et al. got the best results with 120% in sparse parts.");
+    def->sidetext = "%";
+    def->min = 10;
+    def->max = 300;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionPercent(110));
+
+    def = this->add("z_pin_injection_speed", coFloat);
+    def->label = L("Injection flow");
+    def->category = L("Strength");
+    def->tooltip = L("Volumetric flow while filling a pin. It never exceeds the filament's max volumetric speed; "
+                     "0 means use that maximum. Fast short injections work best: a slow one heats the channel wall "
+                     "until it deforms.");
+    def->sidetext = L(u8"mm³/s");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("z_pin_injection_height", coFloat);
+    def->label = L("Nozzle height over the layer");
+    def->category = L("Strength");
+    def->tooltip = L("Height of the nozzle tip above the top of the current layer while it fills a pin. The nozzle "
+                     "never dips into the channel.");
+    def->sidetext = L("mm");
+    def->min = 0;
+    def->max = 2;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0.1));
+
+    def = this->add("z_pin_dwell", coFloat);
+    def->label = L("Dwell after injection");
+    def->category = L("Strength");
+    def->tooltip = L("Wait this long over the pin after the injection before retracting, so the pressure settles.");
+    def->sidetext = L("s");
+    def->min = 0;
+    def->max = 10;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionFloat(0));
+
+    def = this->add("z_pin_top_margin", coInt);
+    def->label = L("Pin-free layers under top");
+    def->category = L("Strength");
+    def->tooltip = L("Layers without channels under every top surface, on top of the top shell layers unless pins are "
+                     "allowed in the solid shells.");
+    def->sidetext = L("layers");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(1));
+
+    def = this->add("z_pin_bottom_margin", coInt);
+    def->label = L("Pin-free layers over bottom");
+    def->category = L("Strength");
+    def->tooltip = L("Layers without channels above every bottom surface, on top of the bottom shell layers unless "
+                     "pins are allowed in the solid shells.");
+    def->sidetext = L("layers");
+    def->min = 0;
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionInt(1));
 
     // ORCA: special flag for flow rate calibration
     def           = this->add("calib_flowrate_topinfill_special_order", coBool);

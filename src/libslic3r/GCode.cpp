@@ -7592,6 +7592,20 @@ LayerResult GCode::process_layer(
         return this->emit_belt_brim_bands(print, layers, single_object_instance_idx, extruder_id);
     };
 
+    // Orca: Z-pins are filled once per object layer and instance, right after its last visit on this layer.
+    std::map<std::pair<size_t, size_t>, std::pair<unsigned int, size_t>> z_pin_last_visit;
+    for (unsigned int extruder_id : layer_tools.extruders) {
+        auto plan_it = filament_to_print_instances.find(extruder_id);
+        if (plan_it == filament_to_print_instances.end())
+            continue;
+        for (size_t v = 0; v < plan_it->second.second.size(); ++ v) {
+            const InstanceToPrint &itp = plan_it->second.first[plan_it->second.second[v].instance_idx];
+            const Layer           *ol  = layers[itp.layer_id].object_layer;
+            if (ol != nullptr && ! ol->z_pin_injections.empty())
+                z_pin_last_visit[{ itp.layer_id, itp.instance_id }] = { extruder_id, v };
+        }
+    }
+
     for (unsigned int extruder_id : layer_tools.extruders)
     {
         if (print.config().skirt_type == stCombined && !print.skirt_brim_groups().empty()) {
@@ -7916,6 +7930,15 @@ LayerResult GCode::process_layer(
                     }
                     // ironing
                     gcode += this->extrude_infill(print,by_region_specific, true);
+                }
+
+                // Orca: Z-pins, inside this instance's object label so cancelling the object skips them too.
+                if (print_wipe_extrusions == 0 && layer_to_print.object_layer != nullptr &&
+                    ! layer_to_print.object_layer->z_pin_injections.empty()) {
+                    auto zp = z_pin_last_visit.find({ instance_to_print.layer_id, instance_to_print.instance_id });
+                    if (zp != z_pin_last_visit.end() && zp->second.first == extruder_id &&
+                        zp->second.second == size_t(&visit - instance_visits.data()))
+                        gcode += this->extrude_z_pins(*layer_to_print.object_layer);
                 }
 
                 if (this->config().gcode_label_objects) {
@@ -12173,5 +12196,110 @@ void GCode::ObjectByExtruder::Island::Region::append(const Type type, const Extr
 // Index into std::vector<LayerToPrint>, which contains Object and Support layers for the current print_z, collected for
 // a single object, or for possibly multiple objects with multiple instances.
 
+
+// Orca: Z-pins. Fill the channels planned for this layer by PrintObject::generate_z_pins(): travel over
+// each channel, put the nozzle just above the layer (it never dips in), extrude the channel volume while
+// circling slowly inside the channel at a capped volumetric rate, dwell, and retract on the next travel.
+// The injection is an XY move on purpose: the G-code processor counts only those as extrusion, so the
+// preview, the time and the filament estimates all include the pins. Circling also keeps the moves under
+// Klipper's default max_extrude_cross_section (4 x nozzle diameter^2).
+std::string GCode::extrude_z_pins(const Layer &layer)
+{
+    std::string gcode;
+    const PrintObjectConfig &oc = layer.object()->config();
+    if (! oc.z_pins.value || layer.z_pin_injections.empty() || m_writer.filament() == nullptr)
+        return gcode;
+
+    const double max_flow = FILAMENT_CONFIG(filament_max_volumetric_speed);
+    double       flow     = oc.z_pin_injection_speed.value;
+    if (flow <= 0.)
+        flow = max_flow;
+    else if (max_flow > 0.)
+        flow = std::min(flow, max_flow);
+    if (flow <= 0.)
+        flow = 5.;
+    const double nozzle_d   = m_config.nozzle_diameter.get_at(get_extruder_id(m_writer.filament()->id()));
+    const double max_area   = 0.9 * 4. * nozzle_d * nozzle_d;
+    const double r          = 0.5 * oc.z_pin_diameter.value;
+    const double rc         = std::max(0.05, std::min(0.4 * r, r - 0.5 * nozzle_d));
+    const double e_per_mm3  = this->config().print_flow_ratio * FILAMENT_CONFIG(filament_flow_ratio) /
+                              m_writer.filament()->filament_crossection();
+    const double z_inject   = m_nominal_z + std::max(0., oc.z_pin_injection_height.value);
+    const int    dwell_ms   = int(std::round(std::max(0., oc.z_pin_dwell.value) * 1000.));
+    constexpr int    seg_per_lap  = 12;
+    constexpr double max_xy_speed = 25.; // mm/s around a sub-millimetre circle
+
+    // Shortest tour from where the nozzle is.
+    Points centres;
+    centres.reserve(layer.z_pin_injections.size());
+    for (const ZPinInjection &inj : layer.z_pin_injections)
+        centres.emplace_back(inj.pos);
+    const Point              start = this->last_pos();
+    const std::vector<size_t> order = chain_points(centres, this->last_pos_defined() ? &start : nullptr);
+
+    char buf[256];
+    snprintf(buf, sizeof(buf), "; Z_PINS layer %d z %.3f: %zu injections\n", int(layer.id()), layer.print_z,
+             layer.z_pin_injections.size());
+    gcode += buf;
+    for (size_t k : order) {
+        const ZPinInjection &inj = layer.z_pin_injections[k];
+        if (inj.volume <= 0.)
+            continue;
+        const Vec2d  c       = unscale(inj.pos);
+        const double lap     = 2. * M_PI * rc;
+        // Enough laps to stay under the cross-section limit; the circling speed is capped, so a very high
+        // flow is lowered to what that path allows (still a fraction of a second per pin).
+        const int    laps    = std::max(1, int(std::ceil(inj.volume / (max_area * lap))));
+        const int    n_seg   = laps * seg_per_lap;
+        const double seg_len = lap / seg_per_lap;
+        const double t       = std::max(inj.volume / flow, n_seg * seg_len / max_xy_speed); // s
+        const double F       = std::max(1., n_seg * seg_len / t * 60.);                    // mm/min
+        const double dE      = inj.volume * e_per_mm3 / n_seg;
+        auto on_circle = [&](int i) {
+            const double a = 2. * M_PI * double(i) / seg_per_lap;
+            return Point(coord_t(std::round(scale_(c.x() + rc * std::cos(a)))), coord_t(std::round(scale_(c.y() + rc * std::sin(a)))));
+        };
+
+        gcode += this->travel_to(on_circle(0), erInternalInfill, "move to z pin");
+        gcode += m_writer.travel_to_z(z_inject, "z pin: nozzle over the layer", true);
+        m_writer.add_object_change_labels(gcode);
+        gcode += this->unretract();
+
+        // Preview: shown as sparse infill (it ends up in the infill), as wide as the channel.
+        if (m_last_processor_extrusion_role != erInternalInfill) {
+            m_last_processor_extrusion_role = erInternalInfill;
+            snprintf(buf, sizeof(buf), ";%s%s\n", GCodeProcessor::reserved_tag(GCodeProcessor::ETags::Role).c_str(),
+                     ExtrusionEntity::role_to_string(erInternalInfill).c_str());
+            gcode += buf;
+        }
+        m_last_width  = float(2. * r);
+        m_last_height = float(layer.height);
+        snprintf(buf, sizeof(buf), ";%s%g\n;%s%g\n", GCodeProcessor::reserved_tag(GCodeProcessor::ETags::Width).c_str(), m_last_width,
+                 GCodeProcessor::reserved_tag(GCodeProcessor::ETags::Height).c_str(), m_last_height);
+        gcode += buf;
+        const Vec2d cg = this->point_to_gcode(inj.pos);
+        snprintf(buf, sizeof(buf), "; Z_PIN_INJECT X%.3f Y%.3f depth %.3f volume %.3f mm3 flow %.2f mm3/s\n",
+                 cg.x(), cg.y(), inj.depth, inj.volume, flow);
+        gcode += buf;
+        gcode += m_writer.set_speed(F, "", "");
+        Polyline wipe_path;
+        for (int i = 1; i <= n_seg; ++ i) {
+            const Point p = on_circle(i);
+            gcode += m_writer.extrude_to_xy(this->point_to_gcode(p), dE);
+            wipe_path.points.emplace_back(p);
+        }
+        if (dwell_ms > 0) {
+            snprintf(buf, sizeof(buf), "G4 P%d ; z pin dwell\n", dwell_ms);
+            gcode += buf;
+        }
+        this->set_last_pos(wipe_path.points.back());
+        wipe_path.reverse();
+        m_wipe.path = std::move(wipe_path);
+        // Always retract (and wipe, if enabled) before leaving the pin: the melt is under pressure.
+        gcode += this->retract(false, false, LiftType::NormalLift);
+    }
+    // The next path resets Z to the layer (see _extrude_piece) after its travel.
+    return gcode;
+}
 
 } // namespace Slic3r
