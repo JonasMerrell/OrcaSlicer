@@ -16,6 +16,7 @@
 #include "Geometry.hpp"
 #include "I18N.hpp"
 #include "Layer.hpp"
+#include "Clearance/ToolheadClearance.hpp"
 #include "MutablePolygon.hpp"
 #include "PerimeterGenerator.hpp"
 #include "PrintBase.hpp"
@@ -945,6 +946,20 @@ void PrintObject::contour_z()
     sla::IndexedMesh imesh(mesh);
     imesh.ground_level_offset(-z);
 
+    // Orca: toolhead clearance (printer setting toolhead_clearance_enable). Each layer gets its own checker
+    // holding what is printed before it, in this PrintObject's frame like the paths contouring moves.
+    // Only the last few mm of layers can stand above a nozzle that dips at most one layer.
+    Clearance::ToolheadShape clearance_shape = Clearance::ToolheadShape::from_config(m_print->config());
+    BoundingBoxf             clearance_area;
+    Clearance::Options       clearance_options;
+    if (!clearance_shape.empty()) {
+        const BoundingBox bbox = this->bounding_box();
+        clearance_area = BoundingBoxf(unscale(bbox.min), unscale(bbox.max));
+        clearance_area.offset(clearance_shape.extent() + 1.);
+        clearance_options.margin = m_print->config().toolhead_clearance_margin.value;
+    }
+    constexpr double clearance_band = 2.; // mm of earlier layers that can matter
+
     std::mutex mtx;
     size_t completed = 0;
     tbb::parallel_for(
@@ -953,7 +968,15 @@ void PrintObject::contour_z()
         [&, this](const tbb::blocked_range<size_t>& range) {
             for (size_t layer_idx = range.begin(); layer_idx < range.end(); layer_idx++) {
                 m_print->throw_if_canceled();
-                m_layers[layer_idx]->make_contour_z(imesh);
+                std::unique_ptr<Clearance::ClearanceChecker> clearance;
+                if (!clearance_shape.empty()) {
+                    // Up to and including the layer below (add_layers_between() takes print_z <= max + EPSILON,
+                    // so this layer's own print_z - EPSILON would still count this layer).
+                    const double below_z = m_layers[layer_idx - 1]->print_z;
+                    clearance = std::make_unique<Clearance::ClearanceChecker>(clearance_shape, clearance_area, clearance_options);
+                    clearance->printed().add_layers_between(*this, below_z - clearance_band, below_z, Point(0, 0));
+                }
+                m_layers[layer_idx]->make_contour_z(imesh, clearance.get());
 
                 std::scoped_lock lock(mtx);
                 completed++;

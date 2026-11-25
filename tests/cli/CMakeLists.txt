@@ -78,6 +78,13 @@ set_tests_properties(cli_nozzle_volume_type PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 900)
 
+add_test(NAME cli_zaa
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_zaa.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON})
+set_tests_properties(cli_zaa PROPERTIES
+    LABELS "CLI;RequiresApp;ZAA"
+    SKIP_RETURN_CODE 77
+    TIMEOUT 900)
+
 # Fork: toolhead clearance settings, the post-slice report and --check-toolhead-clearance.
 add_test(NAME cli_toolhead_clearance
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/test_cli_toolhead_clearance.sh $<TARGET_FILE:OrcaSlicer> ${ORCA_CLI_TEST_PYTHON})
