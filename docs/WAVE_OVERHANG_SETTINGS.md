@@ -16,9 +16,10 @@ Sections below follow the **Print Settings → Wave overhangs** page top to bott
 8. [Cooling](#cooling)
 9. [Floor layers](#floor-layers)
 10. [Staircase (multi-layer waves)](#staircase-multi-layer-waves)
-11. [Debug](#debug)
-12. [Known limitations](#known-limitations)
-13. [G-code markers](#g-code-markers)
+11. [Pin supports](#pin-supports)
+12. [Debug](#debug)
+13. [Known limitations](#known-limitations)
+14. [G-code markers](#g-code-markers)
 
 ---
 
@@ -356,6 +357,40 @@ How it works (`src/libslic3r/WaveOverhangs/WaveStaircase.{hpp,cpp}`, pass in `Wa
 Headless: all of them are region settings, so `orca-slice --set wave_overhang_staircase=1` and per-object `print_params` in `--load-assemble-list` work. Tests: `[WaveOverhangs][Staircase]` (libslic3r and fff_print) and `ctest -R cli_wave_staircase`.
 
 Limits: support material is generated after this pass and is not kept away from the steps (travels are still lifted). The G-code preview groups the steps with the wave layer. Combining it with Z anti-aliasing, brick layers or non-planar infill is untested.
+
+---
+
+## Pin supports
+
+Resin printers hold an overhang down with many thin pins. The pin supports do the same for wave overhangs: a row of separate, tapered pins under the free edge of each wave strip, each fused into the underside of the overhang. A wave layer curls up at its free edge as it cools; a fused pin holds the edge down in tension, which a normal support with a Z gap cannot do. A test shelf (36 mm ABS cantilever, 2026-11-26) with seven such pins modelled as cones printed flat where the same shelf without them curled.
+
+What the pins are (`src/libslic3r/Support/TreeSupportPins.{hpp,cpp}`, run from the support step after any other support):
+
+- **Placement.** On every layer with wave paths, the strip as it hangs over air (the layer minus the layer below, the pieces the wave filled) is shrunk by `wave_overhang_pin_edge_inset`. Its outline is the row of pins, kept only where the strip reaches at least `wave_overhang_pin_min_overhang` out from the layer below, so the part of the edge near the supported side gets none. Each row piece gets a pin at both ends and at every sharp corner, and pins at most `wave_overhang_pin_spacing` apart in between. `wave_overhang_pin_rows` adds rows further in, `wave_overhang_pin_row_spacing` apart. Pins closer than half a spacing to another are dropped.
+- **Shape.** A pin is a cone: `wave_overhang_pin_tip_diameter` at the top, widening at `wave_overhang_pin_taper_angle` from the vertical down to `wave_overhang_pin_base_diameter`. Neighbouring pins are kept `wave_overhang_pin_gap` apart, so closely spaced pins come out thinner than the base diameter rather than merging into a wall. Each layer of a pin prints solid, as concentric loops.
+- **Contact.** The top of a pin is the layer right under the wave layer: no Z gap, no interface. The wave layer prints over it unchanged and fuses to it. Pins drop straight down (they never move sideways or merge, unlike tree branches) to the bed, or stand fused on the model where it is below them. Beside the model they keep the pin gap away from it.
+- **Waves unchanged.** The pins are support extrusions only. The wave generator and the bridge/bottom surface detection only look at the object's own slices, so the overhang still prints as waves, with or without the staircase. That is what tree supports with support enforcers did not do: they turned the overhang into a bottom surface on support, and merged their branches into one wall.
+- **Supports on or off.** With supports off, only the pins print, on support layers at the object's layer heights. With tree supports on, the pins go into the same support layers (a layer is added where none sits at the right height). With `support_remaining_areas_after_wave_overhangs` on (the default), the other supports leave the wave strip to the pins. The pins print with the support filament and line width, at `wave_overhang_pin_speed`.
+
+| Setting | Default | |
+|---|---|---|
+| `wave_overhang_pin_supports` | off | turns the pins on (needs `wave_overhangs`; works with `enable_support` off) |
+| `wave_overhang_pin_tip_diameter` | 0.8 mm | where the pin fuses into the overhang (the test: ~0.85 mm) |
+| `wave_overhang_pin_base_diameter` | 5.0 mm | largest diameter, below the taper (the test: 5.4 mm) |
+| `wave_overhang_pin_taper_angle` | 16° | half angle of the cone; 0 = a cylinder of the tip diameter |
+| `wave_overhang_pin_spacing` | 4.0 mm | along a row (the test: 6.25 mm; denser holds better) |
+| `wave_overhang_pin_edge_inset` | 2.5 mm | outer row's distance in from the strip's edge (the test: 2.5 mm) |
+| `wave_overhang_pin_rows` | 1 | rows of pins, outer row first |
+| `wave_overhang_pin_row_spacing` | 0 | between rows, 0 = the pin spacing |
+| `wave_overhang_pin_min_overhang` | 5.0 mm | pins only where the strip reaches this far out from the layer below |
+| `wave_overhang_pin_gap` | 1.0 mm | smallest gap between two pins, and between a pin and the model |
+| `wave_overhang_pin_speed` | 30 mm/s | print speed of the pins (never faster than the first-layer speed on layer 1); 0 = support speed |
+
+Headless: they are object settings, so `orca-slice --set wave_overhang_pin_supports=1 --set wave_overhang_pin_spacing=3` and per-object settings (`--set-object`, job files, `print_params` in `--load-assemble-list`) work. Tests: `[WaveOverhangs][PinSupports]` (libslic3r and fff_print) and `ctest -R cli_wave_pins`.
+
+Removing them: snap or cut each pin at its tip. A pin standing on the model leaves a small fused nub there too.
+
+Limits: organic tree supports and normal supports put their own layers at their own heights; the pins add their layers between them, which is untested beyond tree (slim/strong/hybrid) supports. Pins only go under wave overhangs, not under bridges or plain overhangs. Rafts and `support_on_build_plate_only` are not considered (pins always stand on the model where it is below them).
 
 ---
 

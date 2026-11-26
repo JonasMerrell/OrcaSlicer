@@ -3255,6 +3255,19 @@ void TabPrint::build()
         optgroup->append_single_option_line("wave_overhang_staircase_speed");
         optgroup->append_single_option_line("wave_overhang_staircase_min_round_time");
 
+        optgroup = page->new_optgroup(L("Pin supports"), L"param_support");
+        optgroup->append_single_option_line("wave_overhang_pin_supports");
+        optgroup->append_single_option_line("wave_overhang_pin_tip_diameter");
+        optgroup->append_single_option_line("wave_overhang_pin_base_diameter");
+        optgroup->append_single_option_line("wave_overhang_pin_taper_angle");
+        optgroup->append_single_option_line("wave_overhang_pin_spacing");
+        optgroup->append_single_option_line("wave_overhang_pin_edge_inset");
+        optgroup->append_single_option_line("wave_overhang_pin_rows");
+        optgroup->append_single_option_line("wave_overhang_pin_row_spacing");
+        optgroup->append_single_option_line("wave_overhang_pin_min_overhang");
+        optgroup->append_single_option_line("wave_overhang_pin_gap");
+        optgroup->append_single_option_line("wave_overhang_pin_speed");
+
         optgroup = page->new_optgroup(L("Debug"), L"param_overhang");
         optgroup->append_single_option_line("wave_overhang_debug_gcode");
 

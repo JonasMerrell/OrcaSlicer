@@ -28,6 +28,7 @@
 #include "Support/SupportMaterial.hpp"
 #include "Support/SupportCommon.hpp"
 #include "Support/SupportSpotsGenerator.hpp"
+#include "Support/TreeSupportPins.hpp"
 #include "Support/TreeSupport.hpp"
 #include "Surface.hpp"
 #include "Slicing.hpp"
@@ -1173,6 +1174,11 @@ void PrintObject::generate_support_material(bool with_belt_brim)
             this->_generate_support_material();
             m_print->throw_if_canceled();
         }
+        // Orca: pin supports under wave overhangs, also with supports off.
+        if (PrintObject::has_pin_supports(m_config) && m_layers.size() > 1) {
+            PinSupports::generate(*this);
+            m_print->throw_if_canceled();
+        }
         // Orca: the tree support collision/avoidance caches and support nodes are only used while this step runs
         // (detect_overhangs() rebuilds them from scratch), so don't keep them resident until the next slice.
         this->clear_tree_support_preview_cache();
@@ -1782,6 +1788,7 @@ bool PrintObject::invalidate_state_by_config_options(
 	        }
         } else if (
         	   opt_key == "support_type"
+            || boost::starts_with(opt_key, "wave_overhang_pin_")
             || opt_key == "support_angle"
             || opt_key == "support_on_build_plate_only"
             || opt_key == "support_critical_regions_only"

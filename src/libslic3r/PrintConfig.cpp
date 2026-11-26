@@ -6906,6 +6906,125 @@ def = this->add("wave_overhang_spacing_mode", coEnum);
     def->max = 100.0;
     def->set_default_value(new ConfigOptionFloat(0.01));
 
+    def = this->add("wave_overhang_pin_supports", coBool);
+    def->label = L("Pin supports under wave overhangs");
+    def->category = L("Support");
+    def->tooltip = L("Hold the free edge of wave overhangs down with separate thin tapered pins, like the "
+                     "supports of a resin printer. Each pin stands on the bed or on the model below, is never "
+                     "merged with its neighbours, and fuses into the underside of the overhang with no gap and "
+                     "no interface, so it holds the tip down against curling. The overhang above still prints "
+                     "as waves. Works with supports off (pins only) or with tree supports.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(false));
+
+    def = this->add("wave_overhang_pin_tip_diameter", coFloat);
+    def->label = L("Pin tip diameter");
+    def->category = L("Support");
+    def->tooltip = L("Diameter of a pin where it fuses into the underside of the wave overhang. Thinner tips "
+                     "snap off more easily; thicker tips hold better.");
+    def->sidetext = L("mm");
+    def->mode = comAdvanced;
+    def->min = 0.2;
+    def->max = 5;
+    def->set_default_value(new ConfigOptionFloat(0.8));
+
+    def = this->add("wave_overhang_pin_base_diameter", coFloat);
+    def->label = L("Pin base diameter");
+    def->category = L("Support");
+    def->tooltip = L("Largest diameter of a pin, reached below the taper. Pins stay at least the pin gap apart, "
+                     "so closely spaced pins come out thinner than this.");
+    def->sidetext = L("mm");
+    def->mode = comAdvanced;
+    def->min = 0.2;
+    def->max = 30;
+    def->set_default_value(new ConfigOptionFloat(5.0));
+
+    def = this->add("wave_overhang_pin_taper_angle", coFloat);
+    def->label = L("Pin taper angle");
+    def->category = L("Support");
+    def->tooltip = L("Half angle of a pin's cone from the vertical: how fast it widens from the tip down to the "
+                     "base diameter. 0 = a straight cylinder of the tip diameter.");
+    def->sidetext = u8"°";
+    def->mode = comAdvanced;
+    def->min = 0;
+    def->max = 60;
+    def->set_default_value(new ConfigOptionFloat(16.0));
+
+    def = this->add("wave_overhang_pin_spacing", coFloat);
+    def->label = L("Pin spacing");
+    def->category = L("Support");
+    def->tooltip = L("Distance between neighbouring pins along the free edge of a wave overhang. Corners of the "
+                     "edge always get a pin.");
+    def->sidetext = L("mm");
+    def->mode = comAdvanced;
+    def->min = 0.5;
+    def->max = 100;
+    def->set_default_value(new ConfigOptionFloat(4.0));
+
+    def = this->add("wave_overhang_pin_edge_inset", coFloat);
+    def->label = L("Pin edge inset");
+    def->category = L("Support");
+    def->tooltip = L("How far in from the edge of the wave overhang the outer row of pins stands (to the pin "
+                     "centre).");
+    def->sidetext = L("mm");
+    def->mode = comAdvanced;
+    def->min = 0;
+    def->max = 50;
+    def->set_default_value(new ConfigOptionFloat(2.5));
+
+    def = this->add("wave_overhang_pin_rows", coInt);
+    def->label = L("Pin rows");
+    def->category = L("Support");
+    def->tooltip = L("Number of rows of pins, the first along the free edge and each further row the row "
+                     "spacing further inward.");
+    def->mode = comAdvanced;
+    def->min = 1;
+    def->max = 20;
+    def->set_default_value(new ConfigOptionInt(1));
+
+    def = this->add("wave_overhang_pin_row_spacing", coFloat);
+    def->label = L("Pin row spacing");
+    def->category = L("Support");
+    def->tooltip = L("Distance between rows of pins. 0 = the pin spacing.");
+    def->sidetext = L("mm");
+    def->mode = comAdvanced;
+    def->min = 0;
+    def->max = 100;
+    def->set_default_value(new ConfigOptionFloat(0.));
+
+    def = this->add("wave_overhang_pin_min_overhang", coFloat);
+    def->label = L("Pin minimum overhang");
+    def->category = L("Support");
+    def->tooltip = L("Pins only stand where the wave overhang reaches at least this far out from the layer "
+                     "below, so short overhangs and the part of an edge close to the supported side get no "
+                     "pins.");
+    def->sidetext = L("mm");
+    def->mode = comAdvanced;
+    def->min = 0;
+    def->max = 100;
+    def->set_default_value(new ConfigOptionFloat(5.0));
+
+    def = this->add("wave_overhang_pin_gap", coFloat);
+    def->label = L("Pin gap");
+    def->category = L("Support");
+    def->tooltip = L("Smallest horizontal gap between two pins, and between a pin and the model beside it. "
+                     "Pins are made thinner where needed so they never merge into a wall.");
+    def->sidetext = L("mm");
+    def->mode = comAdvanced;
+    def->min = 0.1;
+    def->max = 20;
+    def->set_default_value(new ConfigOptionFloat(1.0));
+
+    def = this->add("wave_overhang_pin_speed", coFloat);
+    def->label = L("Pin speed");
+    def->category = L("Support");
+    def->tooltip = L("Print speed of the pin supports. Their loops are tiny, so they print better slowly. "
+                     "0 = support speed.");
+    def->sidetext = L("mm/s");
+    def->mode = comAdvanced;
+    def->min = 0;
+    def->set_default_value(new ConfigOptionFloat(30.));
+
     def = this->add("support_remaining_areas_after_wave_overhangs", coBool);
     def->label = L("Support unfilled wave overhang areas");
     def->category = L("Support");

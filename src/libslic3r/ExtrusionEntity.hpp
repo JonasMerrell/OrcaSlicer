@@ -193,6 +193,9 @@ public:
     // wave-overhang region. G-code stage applies wave_overhang_floor_print_speed
     // and wave_overhang_floor_fan_speed overrides when set.
     bool wave_overhang_floor = false;
+    // Orca: this path belongs to a pin support under a wave overhang (Support/TreeSupportPins.hpp);
+    // G-code prints it at wave_overhang_pin_speed.
+    bool pin_support = false;
     // True if this path is a perimeter (wall) on a layer that contains wave-overhang
     // traces; lets G-code apply wave_overhang_perimeter_speed so walls anchor to the
     // cantilevered wave traces instead of printing at full outer/inner wall speed.
@@ -230,6 +233,7 @@ public:
         , z_contoured(rhs.z_contoured)
         , wave_overhang(rhs.wave_overhang)
         , wave_overhang_floor(rhs.wave_overhang_floor)
+        , pin_support(rhs.pin_support)
         , wave_overhang_perimeter(rhs.wave_overhang_perimeter)
         , wave_overhang_floor_perimeter(rhs.wave_overhang_floor_perimeter)
         , wave_overhang_floor_distance(rhs.wave_overhang_floor_distance)
@@ -251,6 +255,7 @@ public:
         , z_contoured(rhs.z_contoured)
         , wave_overhang(rhs.wave_overhang)
         , wave_overhang_floor(rhs.wave_overhang_floor)
+        , pin_support(rhs.pin_support)
         , wave_overhang_perimeter(rhs.wave_overhang_perimeter)
         , wave_overhang_floor_perimeter(rhs.wave_overhang_floor_perimeter)
         , wave_overhang_floor_distance(rhs.wave_overhang_floor_distance)
@@ -272,6 +277,7 @@ public:
         , z_contoured(rhs.z_contoured)
         , wave_overhang(rhs.wave_overhang)
         , wave_overhang_floor(rhs.wave_overhang_floor)
+        , pin_support(rhs.pin_support)
         , wave_overhang_perimeter(rhs.wave_overhang_perimeter)
         , wave_overhang_floor_perimeter(rhs.wave_overhang_floor_perimeter)
         , wave_overhang_floor_distance(rhs.wave_overhang_floor_distance)
@@ -293,6 +299,7 @@ public:
         , z_contoured(rhs.z_contoured)
         , wave_overhang(rhs.wave_overhang)
         , wave_overhang_floor(rhs.wave_overhang_floor)
+        , pin_support(rhs.pin_support)
         , wave_overhang_perimeter(rhs.wave_overhang_perimeter)
         , wave_overhang_floor_perimeter(rhs.wave_overhang_floor_perimeter)
         , wave_overhang_floor_distance(rhs.wave_overhang_floor_distance)
@@ -317,6 +324,7 @@ public:
         this->curve_degree = rhs.curve_degree;
         this->wave_overhang = rhs.wave_overhang;
         this->wave_overhang_floor = rhs.wave_overhang_floor;
+        this->pin_support = rhs.pin_support;
         this->wave_overhang_perimeter = rhs.wave_overhang_perimeter;
         this->wave_overhang_floor_perimeter = rhs.wave_overhang_floor_perimeter;
         this->wave_overhang_floor_distance = rhs.wave_overhang_floor_distance;
@@ -339,6 +347,7 @@ public:
         this->curve_degree = rhs.curve_degree;
         this->wave_overhang = rhs.wave_overhang;
         this->wave_overhang_floor = rhs.wave_overhang_floor;
+        this->pin_support = rhs.pin_support;
         this->wave_overhang_perimeter = rhs.wave_overhang_perimeter;
         this->wave_overhang_floor_perimeter = rhs.wave_overhang_floor_perimeter;
         this->wave_overhang_floor_distance = rhs.wave_overhang_floor_distance;

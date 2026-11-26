@@ -1361,6 +1361,18 @@ PRINT_CONFIG_CLASS_DEFINE(
     ((ConfigOptionFloat,               slice_closing_radius))
     ((ConfigOptionEnum<SlicingMode>,   slicing_mode))
     ((ConfigOptionBool,                enable_support))
+    // Orca: resin-style pin supports under the free edge of wave overhangs (Support/TreeSupportPins.hpp).
+    ((ConfigOptionBool,                wave_overhang_pin_supports))
+    ((ConfigOptionFloat,               wave_overhang_pin_tip_diameter))
+    ((ConfigOptionFloat,               wave_overhang_pin_base_diameter))
+    ((ConfigOptionFloat,               wave_overhang_pin_taper_angle))
+    ((ConfigOptionFloat,               wave_overhang_pin_spacing))
+    ((ConfigOptionFloat,               wave_overhang_pin_edge_inset))
+    ((ConfigOptionInt,                 wave_overhang_pin_rows))
+    ((ConfigOptionFloat,               wave_overhang_pin_row_spacing))
+    ((ConfigOptionFloat,               wave_overhang_pin_min_overhang))
+    ((ConfigOptionFloat,               wave_overhang_pin_gap))
+    ((ConfigOptionFloat,               wave_overhang_pin_speed))
     // Automatic supports (generated based on support_threshold_angle).
     ((ConfigOptionEnum<SupportType>,   support_type))
     // Direction of the support pattern (in XY plane).`
