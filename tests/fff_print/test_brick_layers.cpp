@@ -161,6 +161,8 @@ TEST_CASE("Brick layers keep wave overhangs and leave their layers unraised", "[
             { "enable_support", "0" },
             { "wave_overhangs", "1" },
             { "wave_overhang_debug_gcode", "1" },
+            // Plain waves: the staircase (on by default) has its own test below.
+            { "wave_overhang_staircase", "0" },
             { "brick_layers", brick ? "1" : "0" },
         });
         return slice({ TestMesh::overhang }, config);

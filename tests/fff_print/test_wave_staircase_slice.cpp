@@ -333,3 +333,63 @@ TEST_CASE("wave floor speed applies only directly above the wave", "[WaveOverhan
         }
     }
 }
+
+// wave_overhang_floor_fan_speed: the steps that stand in for floor layers take the floor fan, the
+// wave lines keep the wave fan.
+TEST_CASE("staircase steps take the floor fan, the wave lines the wave fan", "[WaveOverhangs][Staircase]")
+{
+    const std::string gcode = slice({ shelf_mesh() }, {
+        { "layer_height",                      0.2 },
+        { "initial_layer_print_height",        0.2 },
+        { "wall_loops",                        2 },
+        { "enable_support",                    false },
+        { "gcode_comments",                    true },
+        { "wave_overhangs",                    true },
+        { "wave_overhangs_instead_of_bridges", true },
+        { "wave_overhang_fan_speed",           100 },
+        { "wave_overhang_floor_fan_speed",     30 },
+        { "wave_overhang_floor_layers",        2 },
+        { "wave_overhang_staircase",           true },
+        { "wave_overhang_staircase_layers",    4 },
+        { "wave_overhang_staircase_stagger",   1.6 },
+    });
+    // Fan in % (M106 S0-255) at every extruding move, by the move's height above its layer.
+    std::istringstream in(gcode);
+    std::string        line;
+    double z = 0., layer_z = 0., fan = 0.;
+    bool   in_wave = false;
+    std::map<int, std::map<int, int>> fan_by_step; // step -> fan % -> moves
+    std::map<int, int>                wave_fans;
+    while (std::getline(in, line)) {
+        if (line.rfind(";Z:", 0) == 0) { layer_z = std::atof(line.c_str() + 3); continue; }
+        if (line.rfind(";TYPE:", 0) == 0) { in_wave = line.find("Overhang wall") != std::string::npos; continue; }
+        if (line.rfind("M106", 0) == 0 && line.find(" P") == std::string::npos) {
+            const size_t s = line.find(" S");
+            fan = s == std::string::npos ? 100. : std::atof(line.c_str() + s + 2) / 2.55;
+            continue;
+        }
+        if (line.rfind("M107", 0) == 0) { fan = 0.; continue; }
+        if (line.rfind("G1 ", 0) != 0) continue;
+        const std::string body = line.substr(0, line.find(';'));
+        const size_t zp = body.find(" Z");
+        if (zp != std::string::npos) z = std::atof(body.c_str() + zp + 2);
+        if (body.find(" E") == std::string::npos || body.find(" E-") != std::string::npos) continue;
+        const int step = int(std::lround((z - layer_z) / 0.2));
+        if (step > 0)
+            ++fan_by_step[step][int(std::lround(fan))];
+        else if (in_wave)
+            ++wave_fans[int(std::lround(fan))];
+    }
+    auto share = [](const std::map<int, int> &m, int pct) {
+        int all = 0, hit = 0;
+        for (auto [f, n] : m) { all += n; if (std::abs(f - pct) <= 1) hit += n; }
+        return all > 0 ? double(hit) / all : 0.;
+    };
+    REQUIRE(fan_by_step.count(1));
+    REQUIRE(fan_by_step.count(2));
+    CHECK(share(fan_by_step[1], 30) > 0.95);
+    CHECK(share(fan_by_step[2], 30) > 0.95);
+    if (fan_by_step.count(3))
+        CHECK(share(fan_by_step[3], 100) > 0.95);
+    CHECK(share(wave_fans, 100) > 0.95);
+}

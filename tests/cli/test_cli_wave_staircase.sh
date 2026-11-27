@@ -3,8 +3,9 @@
 #
 # Slices a 30 mm cantilevered shelf with no display (DISPLAY and WAYLAND_DISPLAY unset) and checks
 # the G-code:
-#  1. wave_overhangs=1, staircase off (the default): every extrusion stays at its layer's Z.
-#  2. wave_overhang_staircase=1: some layers also extrude at +1 and +2 layer heights (3 layers per
+#  1. Defaults with wave_overhangs=1: staircase on, wave layer + 3 steps, floor speed 50%. 1b: staircase off:
+#     every extrusion stays at its layer's Z.
+#  2. wave_overhang_staircase=1 with 3 layers: some layers also extrude at +1 and +2 layer heights (3 layers per
 #     band), never higher; travels over the higher steps are lifted; the nozzle never comes within
 #     the stagger of material higher than itself.
 #  3. wave_overhang_staircase_layers=2 and the Hilbert upper pattern: only +1 layer height.
@@ -112,7 +113,7 @@ text = open(path).read()
 for line in text.splitlines():
     if line.startswith(";Z:"):
         layer_z = float(line[3:])
-    elif line.startswith("; wave_overhang_staircase"):
+    elif line.startswith("; wave_overhang_"):
         k, v = line[2:].split(" = ", 1)
         header[k] = v.strip()
     elif line.startswith("G1 ") or line.startswith("G0 "):
@@ -189,13 +190,18 @@ print("ok: %s: %d extrusions, steps %s" % (tag, len(ext), steps))
 EOF
 }
 
-echo "== 1. staircase off by default"
-process "$WORK/off.json"
+echo "== 1. staircase on by default (wave layer + 3 steps)"
+process "$WORK/def.json"
+slice def --load-settings "$WORK/machine.json;$WORK/def.json" "$WORK/shelf.stl"
+check def '{"header": {"wave_overhang_staircase": "1", "wave_overhang_staircase_layers": "4", "wave_overhang_floor_print_speed": "50%"}, "steps": [0.2, 0.4, 0.6], "lifted": true}'
+
+echo "== 1b. wave_overhang_staircase=0"
+process "$WORK/off.json" wave_overhang_staircase=0
 slice off --load-settings "$WORK/machine.json;$WORK/off.json" "$WORK/shelf.stl"
 check off '{"header": {"wave_overhang_staircase": "0"}, "steps": [], "lifted": false}'
 
-echo "== 2. wave_overhang_staircase=1 (3 layers)"
-process "$WORK/on.json" wave_overhang_staircase=1 wave_overhang_staircase_stagger=1.6
+echo "== 2. wave_overhang_staircase=1, 3 layers"
+process "$WORK/on.json" wave_overhang_staircase=1 wave_overhang_staircase_layers=3 wave_overhang_staircase_stagger=1.6
 slice on --load-settings "$WORK/machine.json;$WORK/on.json" "$WORK/shelf.stl"
 check on '{"header": {"wave_overhang_staircase": "1", "wave_overhang_staircase_layers": "3"}, "steps": [0.2, 0.4], "lifted": true, "stagger": 1.6}'
 
@@ -220,10 +226,10 @@ json.dump({"plates": [{"plate_name": "staircase", "need_arrange": False,
           open(sys.argv[1], "w"), indent=4)
 EOF
 slice per_object --load-settings "$WORK/machine.json;$WORK/off.json" --load-assemble-list "$WORK/assemble.json"
-check per_object '{"steps": [0.2, 0.4], "stepped_x_below": 100.0}'
+check per_object '{"steps": [0.2, 0.4, 0.6], "stepped_x_below": 100.0}'
 
 if [ "$fails" -ne 0 ]; then
     echo "FAIL: $fails check(s) failed"
     exit 1
 fi
-echo "PASS: staircase wave overhangs from the headless CLI: off by default, on, 2 layers, height cap, per-object override"
+echo "PASS: staircase wave overhangs from the headless CLI: on by default, off, 3 layers, 2 layers, height cap, per-object override"

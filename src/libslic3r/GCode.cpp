@@ -9624,7 +9624,11 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
     // CoolingBuffer.
     const int wave_main_fan = m_config.wave_overhang_fan_speed.value;
     const int wave_aux_fan  = m_config.wave_overhang_aux_fan_speed.value;
-    const bool wave_fan_active = (path.wave_overhang || path.staircase_band)
+    // A staircase step k <= wave_overhang_floor_layers stands in for floor layer k, so it takes the
+    // floor fan when one is set; the wave lines and any higher steps keep the wave fan.
+    const bool step_as_floor = path.staircase_step > 0 && path.staircase_step <= m_config.wave_overhang_floor_layers.value
+                               && (m_config.wave_overhang_floor_fan_speed.value >= 0 || m_config.wave_overhang_floor_aux_fan_speed.value >= 0);
+    const bool wave_fan_active = (path.wave_overhang || (path.staircase_band && !step_as_floor))
                                  && (wave_main_fan >= 0 || wave_aux_fan >= 0)
                                  && m_enable_cooling_markers;
     // Orca: wave-overhang Hilbert floor fan override. Reuses the existing
@@ -9633,7 +9637,10 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
     // (floor paths should use normal travel speeds, not wave travel speeds).
     const int wave_floor_main_fan = m_config.wave_overhang_floor_fan_speed.value;
     const int wave_floor_aux_fan  = m_config.wave_overhang_floor_aux_fan_speed.value;
-    const bool wave_floor_fan_active = path.wave_overhang_floor
+    // Walls on the floor layers (1..N above a wave layer) take the floor fan too.
+    const bool floor_wall = path.wave_overhang_floor_perimeter && path.wave_overhang_floor_distance > 0
+                            && path.wave_overhang_floor_distance <= m_config.wave_overhang_floor_layers.value;
+    const bool wave_floor_fan_active = (path.wave_overhang_floor || step_as_floor || floor_wall)
                                        && (wave_floor_main_fan >= 0 || wave_floor_aux_fan >= 0)
                                        && m_enable_cooling_markers;
     if (path.wave_overhang)
@@ -10124,7 +10131,7 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
         // If wave_overhang_floor_speed_ramp > 0 and we know the layer's distance from
         // the wave, linearly interpolate between the override (slowest, distance=1)
         // and the normal speed (full, distance>=ramp) so the transition is gradual.
-        const double override_speed = m_config.wave_overhang_floor_print_speed.value;
+        const double override_speed = m_config.wave_overhang_floor_print_speed.get_abs_value(speed); // % of the line's own speed
         const int    ramp           = m_config.wave_overhang_floor_speed_ramp.value;
         // A staircase step k stands in for floor layer k (it is that layer's fill, printed early).
         const int    distance       = path.staircase_step > 0 ? int(path.staircase_step) : int(path.wave_overhang_floor_distance);

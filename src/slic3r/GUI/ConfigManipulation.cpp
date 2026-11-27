@@ -1458,11 +1458,11 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
     for (const std::string &k : {
         std::string("wave_overhang_floor_hilbert_layers"),
         std::string("wave_overhang_floor_hilbert_density"),
-        std::string("wave_overhang_floor_print_speed"),
-        std::string("wave_overhang_floor_fan_speed"),
-        std::string("wave_overhang_floor_aux_fan_speed"),
     })
         toggle_line(k, wo_floor_hilbert);
+    // The floor speed also covers the ordinary floor and the staircase steps.
+    for (const char *k : { "wave_overhang_floor_print_speed", "wave_overhang_floor_fan_speed", "wave_overhang_floor_aux_fan_speed" })
+        toggle_line(k, wo_enabled);
 
     // Orca: Z-pins: the tunables only show when the feature is on.
     if (config->has("z_pins")) {

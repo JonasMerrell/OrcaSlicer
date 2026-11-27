@@ -8522,7 +8522,7 @@
     "part",
     "layer_range"
    ],
-   "type": "float",
+   "type": "float_or_percent",
    "category": "Speed",
    "cli": "orca-slice --set wave_overhang_floor_print_speed=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
   },
@@ -8765,6 +8765,126 @@
    "type": "enum",
    "category": "Strength",
    "cli": "orca-slice --set wave_overhang_spacing_mode=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "wave_overhang_staircase": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "bool",
+   "category": "Strength",
+   "cli": "orca-slice --set wave_overhang_staircase=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "wave_overhang_staircase_layers": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "int",
+   "category": "Strength",
+   "cli": "orca-slice --set wave_overhang_staircase_layers=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "wave_overhang_staircase_max_height": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set wave_overhang_staircase_max_height=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "wave_overhang_staircase_min_round_time": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set wave_overhang_staircase_min_round_time=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "wave_overhang_staircase_pattern": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "enum",
+   "category": "Strength",
+   "cli": "orca-slice --set wave_overhang_staircase_pattern=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "wave_overhang_staircase_rings_per_step": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "int",
+   "category": "Strength",
+   "cli": "orca-slice --set wave_overhang_staircase_rings_per_step=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "wave_overhang_staircase_speed": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set wave_overhang_staircase_speed=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "wave_overhang_staircase_stagger": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set wave_overhang_staircase_stagger=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "wave_overhang_staircase_travel_lift": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "float",
+   "category": "Strength",
+   "cli": "orca-slice --set wave_overhang_staircase_travel_lift=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
+  },
+  "wave_overhang_staircase_walls": {
+   "preset": "process",
+   "scopes": [
+    "global",
+    "object",
+    "part",
+    "layer_range"
+   ],
+   "type": "bool",
+   "category": "Strength",
+   "cli": "orca-slice --set wave_overhang_staircase_walls=V; --set-object / job objects[].settings; job parts[].settings / --modifier; --set-range / job height_ranges[].settings"
   },
   "wave_overhang_travel_speed": {
    "preset": "process",

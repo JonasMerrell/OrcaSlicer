@@ -297,9 +297,9 @@ Infill percentage for the Hilbert floor layers. `100` = solid Hilbert (matches t
 
 ### `wave_overhang_floor_print_speed`
 
-Print speed for the floor layers' solid infill directly above a wave strip (the Hilbert floor, or the ordinary solid floor when `wave_overhang_floor_use_hilbert` is off). Slower gives each line time to shed heat before its neighbour lands, reducing residual stress. Only the infill over the wave strip slows down; the rest of those layers (the part over solid material below, and the walls) keeps its normal speed. With `wave_overhang_staircase`, the steps that stand in for floor layers 1..N (step k is floor layer k) print at this speed too, unless `wave_overhang_staircase_speed` is set.
+Print speed for the floor layers' infill directly above a wave strip (the Hilbert floor, or the ordinary floor when `wave_overhang_floor_use_hilbert` is off, whether solid, sparse or top). Slower gives each line time to shed heat before its neighbour lands, reducing residual stress. Only the infill over the wave strip slows down; the rest of those layers (the part over solid material below, and the walls) keeps its normal speed. With `wave_overhang_staircase`, the steps that stand in for floor layers 1..N (step k is floor layer k) print at this speed too, unless `wave_overhang_staircase_speed` is set. A percentage is of the speed the line would otherwise print at.
 
-- **Type:** float (mm/s) · **Default:** `0` (= inherit solid-infill speed) · **Range:** `0 to 1000`
+- **Type:** float or % (mm/s or %) · **Default:** `50%` · **Range:** `0 to 1000` (0 = no override)
 
 ### `wave_overhang_floor_perimeter_speed`
 
@@ -317,7 +317,7 @@ Number of layers over which the two floor speed overrides ramp linearly back up 
 
 ### `wave_overhang_floor_fan_speed`
 
-Part-cooling fan percentage forced during the Hilbert floor layers. Lower fan keeps the layer warm longer so stress can relax before it locks in. Counter-intuitive but matches the cited research.
+Part-cooling fan percentage forced during the floor layers' solid infill directly above a wave strip (Hilbert or ordinary floor). With `wave_overhang_staircase`, the steps that stand in for floor layers 1..N use it too, while the wave lines keep `wave_overhang_fan_speed`. Over the strip it applies to every infill line on floor layers 1..N (solid, sparse and top), and the walls on those layers take it as well (whole layers, so walls away from the overhang slow their fan too). To keep the fan low all the way up a thin shelf, set `wave_overhang_floor_layers` to the number of layers above the wave: those layers then become solid over the overhang. Lower fan keeps the layer warm longer so stress can relax before it locks in, and narrows the temperature gap between each new line and the one below it, which drives curl.
 
 - **Type:** int (%) · **Default:** `-1` (= inherit) · **Range:** `-1 to 100`
 
@@ -344,8 +344,8 @@ How it works (`src/libslic3r/WaveOverhangs/WaveStaircase.{hpp,cpp}`, pass in `Wa
 
 | Setting | Default | |
 |---|---|---|
-| `wave_overhang_staircase` | off | turns it on (needs `wave_overhangs`) |
-| `wave_overhang_staircase_layers` | 3 | layers per band, wave layer included (2-8) |
+| `wave_overhang_staircase` | on | turns it on (needs `wave_overhangs`) |
+| `wave_overhang_staircase_layers` | 4 | layers per band, wave layer included (2-8): the wave layer and 3 steps |
 | `wave_overhang_staircase_stagger` | 2.0 mm | nozzle centre to the edge of higher material: the tip's flat radius plus a margin |
 | `wave_overhang_staircase_rings_per_step` | 3 | wave rings the front advances per round |
 | `wave_overhang_staircase_pattern` | waves | upper steps: waves (rings along the front), rectilinear, hilbert, concentric |
