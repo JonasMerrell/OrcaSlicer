@@ -3249,6 +3249,7 @@ void TabPrint::build()
         optgroup->append_single_option_line("wave_overhang_staircase_layers");
         optgroup->append_single_option_line("wave_overhang_staircase_stagger");
         optgroup->append_single_option_line("wave_overhang_staircase_rings_per_step");
+        optgroup->append_single_option_line("wave_overhang_staircase_walls");
         optgroup->append_single_option_line("wave_overhang_staircase_pattern");
         optgroup->append_single_option_line("wave_overhang_staircase_max_height");
         optgroup->append_single_option_line("wave_overhang_staircase_travel_lift");

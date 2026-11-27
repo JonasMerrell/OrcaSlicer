@@ -6613,7 +6613,7 @@ void PrintConfigDef::init_fff_params()
                      "being built is several layers thick, so long overhangs curl less. The nozzle moves up "
                      "and down within the layer; travels lift over the higher steps.");
     def->mode = comAdvanced;
-    def->set_default_value(new ConfigOptionBool(false));
+    def->set_default_value(new ConfigOptionBool(true));
 
     def = this->add("wave_overhang_staircase_layers", coInt);
     def->label = L("Staircase layers");
@@ -6624,7 +6624,7 @@ void PrintConfigDef::init_fff_params()
     def->mode = comAdvanced;
     def->min = 2;
     def->max = 8;
-    def->set_default_value(new ConfigOptionInt(3));
+    def->set_default_value(new ConfigOptionInt(4));
 
     def = this->add("wave_overhang_staircase_stagger", coFloat);
     def->label = L("Staircase stagger");
@@ -6648,6 +6648,15 @@ void PrintConfigDef::init_fff_params()
     def->min = 1;
     def->max = 50;
     def->set_default_value(new ConfigOptionInt(3));
+
+    def = this->add("wave_overhang_staircase_walls", coBool);
+    def->label = L("Staircase walls");
+    def->category = L("Strength");
+    def->tooltip = L("Print the walls of the upper layers over the overhang inside the staircase too, so every "
+                     "step reaches the free edge. Without it the steps stop short of the walls the next layers "
+                     "print later, and the edge strip is printed onto the cooled wave.");
+    def->mode = comAdvanced;
+    def->set_default_value(new ConfigOptionBool(true));
 
     def = this->add("wave_overhang_staircase_pattern", coEnum);
     def->label = L("Staircase upper pattern");
@@ -6747,18 +6756,19 @@ void PrintConfigDef::init_fff_params()
     def->max = 100;
     def->set_default_value(new ConfigOptionInt(100));
 
-    def = this->add("wave_overhang_floor_print_speed", coFloat);
-    def->label = L("Hilbert floor print speed");
+    def = this->add("wave_overhang_floor_print_speed", coFloatOrPercent);
+    def->label = L("Floor print speed");
     def->category = L("Speed");
-    def->tooltip = L("Print speed for the Hilbert-pattern floor layers above wave-overhang regions. "
-                     "Slower speeds give each line more time to dissipate heat before the next "
-                     "neighbouring line lands on top, reducing the residual thermal stress that drives "
-                     "warping. 0 = inherit the normal solid-infill speed.");
-    def->sidetext = L("mm/s");
+    def->tooltip = L("Print speed for the floor layers' solid infill directly above a wave strip (Hilbert or "
+                     "ordinary floor), and for the staircase steps that stand in for those layers. Only the "
+                     "part over the wave slows down. A percentage is of the speed the line would otherwise "
+                     "print at. 0 = no override.");
+    def->sidetext = L("mm/s or %");
+    def->ratio_over = "internal_solid_infill_speed";
     def->mode = comAdvanced;
     def->min = 0;
     def->max = 1000;
-    def->set_default_value(new ConfigOptionFloat(0.0));
+    def->set_default_value(new ConfigOptionFloatOrPercent(50, true));
 
     def = this->add("wave_overhang_floor_perimeter_speed", coFloat);
     def->label = L("Floor perimeter speed");

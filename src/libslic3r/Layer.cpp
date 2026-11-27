@@ -389,6 +389,7 @@ void Layer::make_perimeters()
 
     const auto clear_generated_extrusions = [](LayerRegion *layer_region) {
         layer_region->perimeters.clear();
+        layer_region->wave_staircase_original.reset();
         layer_region->fills.clear();
         layer_region->thin_fills.clear();
     };
@@ -399,6 +400,7 @@ void Layer::make_perimeters()
     for (LayerRegionPtrs::iterator layerm = m_regions.begin(); layerm != m_regions.end(); ++ layerm)
     	if ((*layerm)->slices.empty()) {
  			(*layerm)->perimeters.clear();
+ 			(*layerm)->wave_staircase_original.reset();
  			(*layerm)->fills.clear();
  			(*layerm)->thin_fills.clear();
     	} else {

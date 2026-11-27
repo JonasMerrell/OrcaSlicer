@@ -260,18 +260,61 @@ Points sample(const Polyline &pl, coord_t step)
     return out;
 }
 
+// Widest line of the band: the keep-out distances are measured with it.
+double band_width(const BandInput &in)
+{
+    double w = 0.;
+    for (const StepLayer &s : in.steps) {
+        w = std::max(w, double(s.flow.width()));
+        for (const ExtrusionPath &p : s.walls)
+            w = std::max(w, double(p.width));
+    }
+    for (const ExtrusionPath &p : in.waves)
+        w = std::max(w, double(p.width));
+    return w;
+}
+
+// Material of a set of wall paths (each centreline grown by its half width).
+Polygons wall_material(const ExtrusionPaths &walls, const Polylines *pieces = nullptr)
+{
+    Polygons out;
+    if (pieces != nullptr) {
+        // pieces[i] belong to no particular path: use the widest.
+        float w = 0.f;
+        for (const ExtrusionPath &p : walls)
+            w = std::max(w, p.width);
+        if (!pieces->empty() && w > 0.f)
+            out = offset(*pieces, float(scale_(0.5 * w)), jtRound, 0.);
+        return out;
+    }
+    for (const ExtrusionPath &p : walls)
+        if (p.polyline.points.size() >= 2)
+            polygons_append(out, offset(p.polyline.to_polyline(), float(scale_(0.5 * p.width)), jtRound, 0.));
+    return union_(out);
+}
+
+Polylines wall_centrelines(const ExtrusionPaths &walls)
+{
+    Polylines out;
+    for (const ExtrusionPath &p : walls)
+        if (p.polyline.points.size() >= 2)
+            out.emplace_back(p.polyline.to_polyline());
+    return out;
+}
+
 } // namespace
+
+Polygons wall_clip(const Polygons &step_region, const BandInput &in)
+{
+    return shrink(step_region, float(scale_(0.4 * band_width(in))), jtRound, 0.);
+}
 
 std::vector<Polygons> step_regions(const BandInput &in, const Params &params)
 {
     std::vector<Polygons> out;
     if (in.steps.empty() || in.footprint.empty() || params.layers < 2)
         return out;
-    double w = 0.;
-    for (const StepLayer &s : in.steps)
-        w = std::max(w, double(s.flow.width()));
-    for (const ExtrusionPath &p : in.waves)
-        w = std::max(w, double(p.width));
+    const double w = band_width(in);
     // Keep-out between a step and anything printed later at a lower height, centreline to
     // region edge: the stagger plus both lines' half widths.
     const coord_t d     = coord_t(scale_(params.stagger + w));
@@ -283,14 +326,27 @@ std::vector<Polygons> step_regions(const BandInput &in, const Params &params)
     Polygons base = union_(in.footprint, intersection(expand(in.footprint, float(root)), in.island));
     Polygons prev;
     for (size_t k = 0; k < in.steps.size(); ++k) {
+        const StepLayer &sl = in.steps[k];
+        // What the band may print on L+k: the fill, plus the walls when it takes them over.
+        Polygons candidate = sl.fill;
+        if (params.walls && !sl.walls.empty())
+            candidate = union_(candidate, expand(wall_material(sl.walls), float(scale_(0.02))));
         Polygons s;
         if (k == 0) {
-            s = intersection(base, in.steps[0].fill);
+            s = intersection(base, candidate);
             if (!in.rest0.empty())
                 s = diff(s, expand(in.rest0, float(d)));
         } else {
-            s = intersection(prev, in.steps[k].fill);
-            const Polygons later_lower = diff(in.steps[k - 1].slices, prev);
+            s = intersection(prev, candidate);
+            // Printed later at a lower height: layer L+k-1 outside the step below, and the walls of
+            // L+k-1 the band does not take (they reach into the step below by up to a line width).
+            // Slivers between the outline and the walls the band takes are not material.
+            Polygons later_lower = drop_slivers(diff(in.steps[k - 1].slices, prev), coord_t(scale_(0.25 * w)));
+            if (params.walls && !in.steps[k - 1].walls.empty()) {
+                const Polylines left = diff_pl(wall_centrelines(in.steps[k - 1].walls), wall_clip(prev, in));
+                if (!left.empty())
+                    later_lower = union_(later_lower, wall_material(in.steps[k - 1].walls, &left));
+            }
             if (!later_lower.empty())
                 s = diff(s, expand(later_lower, float(d)));
         }
@@ -352,7 +408,8 @@ BandResult build_band(const BandInput &in, const Params &params)
     // Upper steps.
     for (size_t k = 0; k < res.step_regions.size(); ++k) {
         const StepLayer &sl   = in.steps[k];
-        const Polygons  &reg  = res.step_regions[k];
+        // The step's infill area; with walls, the step region also covers the walls around it.
+        const Polygons   reg  = params.walls && !sl.walls.empty() ? intersection(res.step_regions[k], sl.fill) : res.step_regions[k];
         Flow             flow = sl.flow;
         if (params.pattern == StepPattern::Waves)
             flow = flow.with_spacing(float(unscale<double>(spacing)));
@@ -369,6 +426,25 @@ BandResult build_band(const BandInput &in, const Params &params)
             p.proto = proto;
             pieces.emplace_back(std::move(p));
         };
+        // The walls of L+k over the step below, in band order like the fill lines.
+        if (params.walls && !sl.walls.empty()) {
+            const Polygons clip = wall_clip(res.step_regions[k], in);
+            for (const ExtrusionPath &wall : sl.walls) {
+                for (Polyline &pl : intersection_pl(Polylines{ wall.polyline.to_polyline() }, clip))
+                    for (auto &pb : cut_into_bands(pl, field, rings, cut_step, min_len)) {
+                        if (pb.first.points.size() < 2 || pb.first.length() < double(scale_(0.2)))
+                            continue;
+                        Piece p;
+                        p.pl                   = std::move(pb.first);
+                        p.step                 = int(k + 1);
+                        p.band                 = pb.second;
+                        p.proto                = wall;
+                        p.proto.z_contoured    = true;
+                        p.proto.staircase_step = int8_t(k + 1);
+                        pieces.emplace_back(std::move(p));
+                    }
+            }
+        }
         if (params.pattern == StepPattern::Waves) {
             const Polygons trim = shrink(reg, float(flow.scaled_width() / 2), jtRound, 0.);
             if (trim.empty())

@@ -9624,7 +9624,11 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
     // CoolingBuffer.
     const int wave_main_fan = m_config.wave_overhang_fan_speed.value;
     const int wave_aux_fan  = m_config.wave_overhang_aux_fan_speed.value;
-    const bool wave_fan_active = (path.wave_overhang || path.staircase_band)
+    // A staircase step k <= wave_overhang_floor_layers stands in for floor layer k, so it takes the
+    // floor fan when one is set; the wave lines and any higher steps keep the wave fan.
+    const bool step_as_floor = path.staircase_step > 0 && path.staircase_step <= m_config.wave_overhang_floor_layers.value
+                               && (m_config.wave_overhang_floor_fan_speed.value >= 0 || m_config.wave_overhang_floor_aux_fan_speed.value >= 0);
+    const bool wave_fan_active = (path.wave_overhang || (path.staircase_band && !step_as_floor))
                                  && (wave_main_fan >= 0 || wave_aux_fan >= 0)
                                  && m_enable_cooling_markers;
     // Orca: wave-overhang Hilbert floor fan override. Reuses the existing
@@ -9633,7 +9637,10 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
     // (floor paths should use normal travel speeds, not wave travel speeds).
     const int wave_floor_main_fan = m_config.wave_overhang_floor_fan_speed.value;
     const int wave_floor_aux_fan  = m_config.wave_overhang_floor_aux_fan_speed.value;
-    const bool wave_floor_fan_active = path.wave_overhang_floor
+    // Walls on the floor layers (1..N above a wave layer) take the floor fan too.
+    const bool floor_wall = path.wave_overhang_floor_perimeter && path.wave_overhang_floor_distance > 0
+                            && path.wave_overhang_floor_distance <= m_config.wave_overhang_floor_layers.value;
+    const bool wave_floor_fan_active = (path.wave_overhang_floor || step_as_floor || floor_wall)
                                        && (wave_floor_main_fan >= 0 || wave_floor_aux_fan >= 0)
                                        && m_enable_cooling_markers;
     if (path.wave_overhang)
@@ -10115,16 +10122,19 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
         speed = m_config.wave_overhang_staircase_speed.value;
         requires_segmented_extrusion = false;
         new_points.clear();
-    } else if (path.wave_overhang_floor && m_config.wave_overhang_floor_print_speed.value > 0) {
+    } else if ((path.wave_overhang_floor
+                || (path.staircase_step > 0 && path.staircase_step <= m_config.wave_overhang_floor_layers.value))
+               && m_config.wave_overhang_floor_print_speed.value > 0) {
         // Orca: wave-overhang Hilbert floor speed override. Slower print on the floor
         // layers gives each Hilbert line more time to dissipate heat before its
         // neighbours land, which reduces the residual thermal stress driving warping.
         // If wave_overhang_floor_speed_ramp > 0 and we know the layer's distance from
         // the wave, linearly interpolate between the override (slowest, distance=1)
         // and the normal speed (full, distance>=ramp) so the transition is gradual.
-        const double override_speed = m_config.wave_overhang_floor_print_speed.value;
+        const double override_speed = m_config.wave_overhang_floor_print_speed.get_abs_value(speed); // % of the line's own speed
         const int    ramp           = m_config.wave_overhang_floor_speed_ramp.value;
-        const int    distance       = path.wave_overhang_floor_distance;
+        // A staircase step k stands in for floor layer k (it is that layer's fill, printed early).
+        const int    distance       = path.staircase_step > 0 ? int(path.staircase_step) : int(path.wave_overhang_floor_distance);
         if (ramp > 0 && distance > 0) {
             // layer 1 above the wave prints at the override, layer `ramp` at full speed
             const double factor = distance <= 1 ? 0. : (distance >= ramp ? 1. : double(distance - 1) / double(ramp - 1));
@@ -10161,7 +10171,8 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
         new_points.clear();
     }
     // Orca: wave overrides replace the speed after the cap above, so re-apply it.
-    if ((path.wave_overhang || path.wave_overhang_floor || path.wave_overhang_perimeter || path.wave_overhang_floor_perimeter)
+    if ((path.wave_overhang || path.wave_overhang_floor || path.wave_overhang_perimeter || path.wave_overhang_floor_perimeter
+         || path.staircase_step > 0)
         && FILAMENT_CONFIG(filament_max_volumetric_speed) > 0 && _mm3_per_mm > 0)
         speed = std::min(speed, FILAMENT_CONFIG(filament_max_volumetric_speed) / _mm3_per_mm);
 
@@ -11152,10 +11163,16 @@ std::string GCode::travel_to(const Point& point, ExtrusionRole role, std::string
                 // Extra movements emitted by avoid_crossing_perimeters move to the layer height at the first point,
                 // unless the nozzle stays lifted. The target Z is applied at the last point.
                 const bool layer_z_first = travel.size() > 2 && !stay_lifted;
+                // Orca: staircase wave overhangs. Between two steps above the layer the detour stays at
+                // the lower end's height instead of sinking into the step just printed; the clearance
+                // check above already lifted it over anything higher than that.
+                double detour_z = m_nominal_z;
+                if (layer_z_first && !m_staircase_obstacles.empty() && !m_need_change_layer_lift_z)
+                    detour_z = std::max(m_nominal_z, std::min(m_writer.get_position().z() - m_writer.get_zhop(), target_z));
                 for (size_t i = 1; i < travel.size(); ++i) {
                     const Vec2d dest2d = this->point_to_gcode(travel.points[i]);
                     if (i == 1 && layer_z_first) {
-                        gcode += m_writer.travel_to_xyz(Vec3d(dest2d.x(), dest2d.y(), m_nominal_z), wave_travel_speed, comment, m_need_change_layer_lift_z);
+                        gcode += m_writer.travel_to_xyz(Vec3d(dest2d.x(), dest2d.y(), detour_z), wave_travel_speed, comment, m_need_change_layer_lift_z);
                         m_need_change_layer_lift_z = false;
                     } else if (i == travel.size() - 1 && (z != DBL_MAX || !layer_z_first)) {
                         gcode += m_writer.travel_to_xyz(Vec3d(dest2d.x(), dest2d.y(), target_z), wave_travel_speed, comment, m_need_change_layer_lift_z);

@@ -88,9 +88,10 @@ public:
     // (this collection contains only ExtrusionEntityCollection objects)
     ExtrusionEntityCollection   perimeters;
 
-    // Orca: staircase wave overhangs. The wave paths a band took out of an island collection
-    // (index into perimeters.entities), so the pass can be undone when prepare_infill runs again.
-    std::vector<std::pair<size_t, ExtrusionPaths>> wave_staircase_stash;
+    // Orca: staircase wave overhangs. The perimeters as the perimeter generator left them, saved
+    // before the staircase pass moved waves or walls into a band, so the pass can be undone when
+    // prepare_infill runs again. Dropped whenever the perimeters are generated anew.
+    std::shared_ptr<ExtrusionEntityCollection> wave_staircase_original;
 
     // ordered collection of extrusion paths to fill surfaces
     // (this collection contains only ExtrusionEntityCollection objects)

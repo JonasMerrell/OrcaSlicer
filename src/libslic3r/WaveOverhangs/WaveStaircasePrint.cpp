@@ -24,37 +24,100 @@ bool is_band(const ExtrusionEntity *entity)
 
 namespace {
 
-// Undo a previous run on this layer region: drop the band collections and put the wave paths
-// back at the front of their island collections, where the perimeter generator left them.
+// Undo a previous run on this layer region: put the perimeters back as the perimeter generator
+// left them. (Regenerating the perimeters drops the saved copy, see LayerRegion::make_perimeters.)
 void restore(LayerRegion &layerm)
 {
-    ExtrusionEntitiesPtr &ents = layerm.perimeters.entities;
-    bool had_band = false;
-    for (size_t i = 0; i < ents.size();) {
-        if (is_band(ents[i])) {
-            delete ents[i];
-            ents.erase(ents.begin() + i);
-            had_band = true;
-        } else
-            ++i;
+    if (layerm.wave_staircase_original) {
+        layerm.perimeters = *layerm.wave_staircase_original;
+        layerm.wave_staircase_original.reset();
     }
-    if (had_band) {
-        for (auto &[idx, paths] : layerm.wave_staircase_stash) {
-            if (idx >= ents.size())
-                continue;
-            auto *island = dynamic_cast<ExtrusionEntityCollection *>(ents[idx]);
-            if (island == nullptr)
-                continue;
-            ExtrusionEntitiesPtr restored;
-            restored.reserve(paths.size() + island->entities.size());
-            for (const ExtrusionPath &p : paths)
-                restored.push_back(p.clone());
-            restored.insert(restored.end(), island->entities.begin(), island->entities.end());
-            island->entities = std::move(restored);
+}
+
+// Save the perimeters before the pass changes them for the first time.
+void save(LayerRegion &layerm)
+{
+    if (!layerm.wave_staircase_original)
+        layerm.wave_staircase_original = std::make_shared<ExtrusionEntityCollection>(layerm.perimeters);
+}
+
+// Walls the band may take over: perimeters and gap fill, not waves or another band's paths.
+bool takeable(const ExtrusionPath &p)
+{
+    return !p.wave_overhang && !p.staircase_band && p.staircase_step == 0 && !p.z_contoured
+        && (is_perimeter(p.role()) || p.role() == erGapFill) && p.polyline.points.size() >= 2;
+}
+
+// Call fn on every wall path in the perimeters (outside band collections).
+template<class Fn> void for_each_wall(const ExtrusionEntityCollection &coll, Fn &&fn)
+{
+    for (const ExtrusionEntity *e : coll.entities) {
+        if (const auto *c = dynamic_cast<const ExtrusionEntityCollection *>(e)) {
+            if (!is_band(c))
+                for_each_wall(*c, fn);
+        } else if (const auto *l = dynamic_cast<const ExtrusionLoop *>(e)) {
+            for (const ExtrusionPath &p : l->paths)
+                if (takeable(p)) fn(p);
+        } else if (const auto *m = dynamic_cast<const ExtrusionMultiPath *>(e)) {
+            for (const ExtrusionPath &p : m->paths)
+                if (takeable(p)) fn(p);
+        } else if (const auto *p = dynamic_cast<const ExtrusionPath *>(e)) {
+            if (takeable(*p)) fn(*p);
         }
     }
-    // Without a band the perimeters were regenerated and the stash is stale.
-    layerm.wave_staircase_stash.clear();
+}
+
+// Remove the parts of the walls inside `clip` (the band prints them). A loop or multipath that
+// loses a part becomes the open paths that are left, in its place.
+void cut_walls(ExtrusionEntityCollection &coll, const Polygons &clip, const BoundingBox &clip_bb)
+{
+    ExtrusionEntitiesPtr out;
+    out.reserve(coll.entities.size());
+    for (ExtrusionEntity *e : coll.entities) {
+        if (auto *c = dynamic_cast<ExtrusionEntityCollection *>(e)) {
+            if (!is_band(c))
+                cut_walls(*c, clip, clip_bb);
+            out.push_back(e);
+            continue;
+        }
+        const ExtrusionPaths *leaves = nullptr;
+        ExtrusionPaths        single;
+        if (const auto *l = dynamic_cast<const ExtrusionLoop *>(e))
+            leaves = &l->paths;
+        else if (const auto *m = dynamic_cast<const ExtrusionMultiPath *>(e))
+            leaves = &m->paths;
+        else if (const auto *p = dynamic_cast<const ExtrusionPath *>(e)) {
+            single.push_back(*p);
+            leaves = &single;
+        }
+        if (leaves == nullptr) {
+            out.push_back(e);
+            continue;
+        }
+        bool           touched = false;
+        ExtrusionPaths kept;
+        for (const ExtrusionPath &p : *leaves) {
+            if (takeable(p)) {
+                const Polyline pl = p.polyline.to_polyline();
+                if (get_extents(pl).overlap(clip_bb) && !intersection_pl(Polylines{ pl }, clip).empty()) {
+                    touched = true;
+                    for (Polyline &rest : diff_pl(Polylines{ pl }, clip))
+                        if (rest.points.size() >= 2)
+                            kept.emplace_back(Polyline3(rest), p);
+                    continue;
+                }
+            }
+            kept.push_back(p);
+        }
+        if (!touched) {
+            out.push_back(e);
+            continue;
+        }
+        delete e;
+        for (ExtrusionPath &p : kept)
+            out.push_back(new ExtrusionPath(std::move(p)));
+    }
+    coll.entities = std::move(out);
 }
 
 StepPattern pattern_of(WaveStaircasePattern p)
@@ -131,6 +194,7 @@ void apply(PrintObject &object)
         params.rings_per_step = rc.wave_overhang_staircase_rings_per_step.value;
         params.ring_spacing   = rc.wave_overhang_line_spacing.value;
         params.pattern        = pattern_of(rc.wave_overhang_staircase_pattern.value);
+        params.walls          = rc.wave_overhang_staircase_walls.value;
         const double max_height = rc.wave_overhang_staircase_max_height.value;
         const bool   ironing    = rc.ironing_type.value != IroningType::NoIroning;
 
@@ -210,16 +274,26 @@ void apply(PrintObject &object)
                     polygons_append(sl.slices, other_instances(object, ul->print_z, bb));
                     sl.flow   = ulm->flow(frSolidInfill);
                     sl.angle  = float(Geometry::deg2rad(rc.solid_infill_direction.value + 90.));
+                    if (params.walls)
+                        for_each_wall(ulm->perimeters, [&](const ExtrusionPath &p) {
+                            if (get_extents(p.polyline.to_polyline()).overlap(bb))
+                                sl.walls.push_back(p);
+                        });
                     in.steps.push_back(std::move(sl));
                 }
                 BandResult band = build_band(in, params);
                 if (band.paths.empty())
                     continue;
 
-                // The band now prints these areas of the layers above.
+                // The band now prints these areas of the layers above, and the walls in them.
                 for (size_t k = 0; k < band.step_regions.size(); ++k) {
                     LayerRegion *ulm = layers[upper[k]]->get_region(int(region_id));
                     const Polygons &cut = band.step_regions[k];
+                    if (params.walls && !in.steps[k].walls.empty()) {
+                        const Polygons clip = wall_clip(cut, in);
+                        save(*ulm);
+                        cut_walls(ulm->perimeters, clip, get_extents(clip));
+                    }
                     Surfaces kept;
                     for (const Surface &s : ulm->fill_surfaces.surfaces)
                         for (ExPolygon &e : diff_ex(to_polygons(s.expolygon), cut))
@@ -227,17 +301,15 @@ void apply(PrintObject &object)
                     ulm->fill_surfaces.surfaces = std::move(kept);
                 }
                 // Move the island's wave paths into the band.
+                save(*layerm);
                 ExtrusionEntitiesPtr remaining;
-                ExtrusionPaths       stashed;
                 for (ExtrusionEntity *e : island_coll->entities) {
-                    if (auto *p = dynamic_cast<ExtrusionPath *>(e); p != nullptr && p->wave_overhang) {
-                        stashed.push_back(*p);
+                    if (auto *p = dynamic_cast<ExtrusionPath *>(e); p != nullptr && p->wave_overhang)
                         delete e;
-                    } else
+                    else
                         remaining.push_back(e);
                 }
                 island_coll->entities = std::move(remaining);
-                layerm->wave_staircase_stash.emplace_back(ci, std::move(stashed));
                 auto *band_coll    = new ExtrusionEntityCollection();
                 band_coll->no_sort = true;
                 band_coll->append(band.paths);

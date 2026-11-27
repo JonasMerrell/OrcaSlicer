@@ -1237,6 +1237,7 @@ static std::vector<std::string> s_Preset_print_options{
     "wave_overhang_staircase_layers",
     "wave_overhang_staircase_stagger",
     "wave_overhang_staircase_rings_per_step",
+    "wave_overhang_staircase_walls",
     "wave_overhang_staircase_pattern",
     "wave_overhang_staircase_max_height",
     "wave_overhang_staircase_travel_lift",

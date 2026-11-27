@@ -205,3 +205,191 @@ TEST_CASE("staircase waves never leave the nozzle beside higher material, travel
     }
     CHECK(d > 1.6 - 0.3);
 }
+
+// Jonas's presets avoid crossing walls: a rerouted travel between two edge wall pieces of a step
+// must not sink to the layer height into the step it just printed.
+TEST_CASE("staircase travels rerouted around walls stay on the step", "[WaveOverhangs][Staircase]")
+{
+    const std::string gcode = slice({ shelf_mesh() }, {
+        { "layer_height",                      0.2 },
+        { "initial_layer_print_height",        0.2 },
+        { "wall_loops",                        2 },
+        { "enable_support",                    false },
+        { "gcode_comments",                    true },
+        { "reduce_crossing_wall",              true },
+        { "wave_overhangs",                    true },
+        { "wave_overhangs_instead_of_bridges", true },
+        { "wave_overhang_staircase",           true },
+        { "wave_overhang_staircase_walls",     true },
+        { "wave_overhang_staircase_stagger",   1.6 },
+    });
+    int          worst = 0;
+    const double d     = min_distance_to_higher_material(gcode, &worst);
+    INFO("closest at G-code line " << worst);
+    if (d <= 1.6 - 0.3)
+        std::ofstream("staircase_rerouted.gcode") << gcode;
+    CHECK(d > 1.6 - 0.3);
+}
+
+namespace {
+
+struct Move { double x0, y0, x1, y1, z, layer_z, f; bool extrudes; };
+
+std::vector<Move> moves_of(const std::string &gcode)
+{
+    std::vector<Move>  out;
+    std::istringstream in(gcode);
+    std::string        line;
+    double x = 0., y = 0., z = 0., f = 0., layer_z = 0.;
+    auto value = [](const std::string &l, char axis, double &v) {
+        const std::string body = l.substr(0, l.find(';'));
+        for (size_t i = 0; i < body.size(); ++i)
+            if (body[i] == axis && (i == 0 || body[i - 1] == ' ')) {
+                v = std::atof(body.c_str() + i + 1);
+                return true;
+            }
+        return false;
+    };
+    while (std::getline(in, line)) {
+        if (line.rfind(";Z:", 0) == 0) {
+            layer_z = std::atof(line.c_str() + 3);
+            continue;
+        }
+        if (line.rfind("G1 ", 0) != 0 && line.rfind("G0 ", 0) != 0)
+            continue;
+        double nx = x, ny = y, e = 0.;
+        const bool xy = value(line, 'X', nx) | value(line, 'Y', ny);
+        value(line, 'Z', z);
+        value(line, 'F', f);
+        if (xy)
+            out.push_back({ x, y, nx, ny, z, layer_z, f, value(line, 'E', e) && e > 0. });
+        x = nx; y = ny;
+    }
+    return out;
+}
+
+std::string slice_floor_speed(bool staircase)
+{
+    return slice({ shelf_mesh() }, {
+        { "layer_height",                      0.2 },
+        { "initial_layer_print_height",        0.2 },
+        { "wall_loops",                        2 },
+        { "enable_support",                    false },
+        { "gcode_comments",                    true },
+        { "wave_overhangs",                    true },
+        { "wave_overhangs_instead_of_bridges", true },
+        { "wave_overhang_floor_layers",        2 },
+        { "wave_overhang_floor_print_speed",   7. },
+        { "slow_down_for_layer_cooling",       false },
+        { "wave_overhang_staircase",           staircase },
+        { "wave_overhang_staircase_layers",    4 },
+        { "wave_overhang_staircase_stagger",   1.6 },
+    });
+}
+
+} // namespace
+
+// wave_overhang_floor_print_speed with the ordinary (non-Hilbert) floor: only the infill directly
+// above the wave strip slows down, the rest of the layer keeps its speed. With the staircase, the
+// steps that stand in for the floor layers (+1, +2) slow down too, the step above them does not.
+TEST_CASE("wave floor speed applies only directly above the wave", "[WaveOverhangs][Staircase]")
+{
+    for (bool staircase : { false, true }) {
+        CAPTURE(staircase);
+        const std::vector<Move> mv = moves_of(slice_floor_speed(staircase));
+        double min_x = 1e9;
+        for (const Move &m : mv)
+            if (m.extrudes && m.layer_z > 0.5)
+                min_x = std::min({ min_x, m.x0, m.x1 });
+        REQUIRE(min_x < 1e8);
+        // The tower is 10 mm wide; the shelf sticks out past x = min_x + 10.
+        const double edge = min_x + 10.;
+        int slow = 0, slow_on_tower = 0, slow_steps[4] = { 0, 0, 0, 0 }, fast_steps[4] = { 0, 0, 0, 0 };
+        for (const Move &m : mv) {
+            if (!m.extrudes)
+                continue;
+            const bool is_slow = std::abs(m.f - 7. * 60.) < 1.;
+            const int  step    = int(std::lround((m.z - m.layer_z) / 0.2));
+            if (step >= 1 && step <= 3)
+                (is_slow ? slow_steps : fast_steps)[step] += 1;
+            if (!is_slow)
+                continue;
+            ++slow;
+            // Staircase steps (z above the layer) are slowed whole, root extension over the tower
+            // included; only the ordinary layer's moves must stay over the wave. An infill line
+            // may cross the strip's anchor overlap by a line width or so.
+            if (step == 0 && std::min(m.x0, m.x1) < edge - 1.5)
+                ++slow_on_tower;
+        }
+        CHECK(slow > 10);
+        CHECK(slow_on_tower == 0);
+        if (staircase) {
+            CHECK(slow_steps[1] > 10);
+            CHECK(slow_steps[2] > 10);
+            CHECK(fast_steps[1] == 0);
+            CHECK(fast_steps[2] == 0);
+            CHECK(slow_steps[3] == 0);
+            CHECK(fast_steps[3] > 5);
+        }
+    }
+}
+
+// wave_overhang_floor_fan_speed: the steps that stand in for floor layers take the floor fan, the
+// wave lines keep the wave fan.
+TEST_CASE("staircase steps take the floor fan, the wave lines the wave fan", "[WaveOverhangs][Staircase]")
+{
+    const std::string gcode = slice({ shelf_mesh() }, {
+        { "layer_height",                      0.2 },
+        { "initial_layer_print_height",        0.2 },
+        { "wall_loops",                        2 },
+        { "enable_support",                    false },
+        { "gcode_comments",                    true },
+        { "wave_overhangs",                    true },
+        { "wave_overhangs_instead_of_bridges", true },
+        { "wave_overhang_fan_speed",           100 },
+        { "wave_overhang_floor_fan_speed",     30 },
+        { "wave_overhang_floor_layers",        2 },
+        { "wave_overhang_staircase",           true },
+        { "wave_overhang_staircase_layers",    4 },
+        { "wave_overhang_staircase_stagger",   1.6 },
+    });
+    // Fan in % (M106 S0-255) at every extruding move, by the move's height above its layer.
+    std::istringstream in(gcode);
+    std::string        line;
+    double z = 0., layer_z = 0., fan = 0.;
+    bool   in_wave = false;
+    std::map<int, std::map<int, int>> fan_by_step; // step -> fan % -> moves
+    std::map<int, int>                wave_fans;
+    while (std::getline(in, line)) {
+        if (line.rfind(";Z:", 0) == 0) { layer_z = std::atof(line.c_str() + 3); continue; }
+        if (line.rfind(";TYPE:", 0) == 0) { in_wave = line.find("Overhang wall") != std::string::npos; continue; }
+        if (line.rfind("M106", 0) == 0 && line.find(" P") == std::string::npos) {
+            const size_t s = line.find(" S");
+            fan = s == std::string::npos ? 100. : std::atof(line.c_str() + s + 2) / 2.55;
+            continue;
+        }
+        if (line.rfind("M107", 0) == 0) { fan = 0.; continue; }
+        if (line.rfind("G1 ", 0) != 0) continue;
+        const std::string body = line.substr(0, line.find(';'));
+        const size_t zp = body.find(" Z");
+        if (zp != std::string::npos) z = std::atof(body.c_str() + zp + 2);
+        if (body.find(" E") == std::string::npos || body.find(" E-") != std::string::npos) continue;
+        const int step = int(std::lround((z - layer_z) / 0.2));
+        if (step > 0)
+            ++fan_by_step[step][int(std::lround(fan))];
+        else if (in_wave)
+            ++wave_fans[int(std::lround(fan))];
+    }
+    auto share = [](const std::map<int, int> &m, int pct) {
+        int all = 0, hit = 0;
+        for (auto [f, n] : m) { all += n; if (std::abs(f - pct) <= 1) hit += n; }
+        return all > 0 ? double(hit) / all : 0.;
+    };
+    REQUIRE(fan_by_step.count(1));
+    REQUIRE(fan_by_step.count(2));
+    CHECK(share(fan_by_step[1], 30) > 0.95);
+    CHECK(share(fan_by_step[2], 30) > 0.95);
+    if (fan_by_step.count(3))
+        CHECK(share(fan_by_step[3], 100) > 0.95);
+    CHECK(share(wave_fans, 100) > 0.95);
+}
