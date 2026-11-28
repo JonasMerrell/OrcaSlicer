@@ -1,0 +1,13 @@
+[Unit]
+Description=orca-web: the OrcaSlicer GUI as a web page
+After=network-online.target
+
+[Service]
+ExecStart=@ORCA_WEB@ run
+Restart=on-failure
+RestartSec=5
+# OrcaSlicer is a desktop app: keep it from starving the slicing CLI or builds.
+Nice=5
+
+[Install]
+WantedBy=default.target
