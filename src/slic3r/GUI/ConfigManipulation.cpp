@@ -1423,8 +1423,25 @@ void ConfigManipulation::toggle_print_fff_options(DynamicPrintConfig *config, in
         std::string("wave_overhang_min_new_area"),
         std::string("wave_overhang_corner_taper_enable"),
         std::string("wave_overhang_staircase"),
+        std::string("wave_overhang_pin_supports"),
     })
         toggle_line(k, wo_enabled);
+
+    // Orca: pin supports under wave overhangs, tunables shown when the pins are on.
+    const bool wo_pins = wo_enabled && config->opt_bool("wave_overhang_pin_supports");
+    for (const std::string &k : {
+        std::string("wave_overhang_pin_tip_diameter"),
+        std::string("wave_overhang_pin_base_diameter"),
+        std::string("wave_overhang_pin_taper_angle"),
+        std::string("wave_overhang_pin_spacing"),
+        std::string("wave_overhang_pin_edge_inset"),
+        std::string("wave_overhang_pin_rows"),
+        std::string("wave_overhang_pin_row_spacing"),
+        std::string("wave_overhang_pin_min_overhang"),
+        std::string("wave_overhang_pin_gap"),
+        std::string("wave_overhang_pin_speed"),
+    })
+        toggle_line(k, wo_pins);
 
     // Orca: staircase wave overhang tunables, shown when the staircase is on.
     const bool wo_staircase = wo_enabled && config->opt_bool("wave_overhang_staircase");

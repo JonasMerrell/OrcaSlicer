@@ -44,6 +44,7 @@ add_executable(${_TEST_NAME}_tests
 	test_trianglemesh.cpp
 	test_wipe.cpp
 	test_wave_staircase_slice.cpp
+	test_wave_pin_supports_slice.cpp
 	test_wipe_tower.cpp
 	)
 target_link_libraries(${_TEST_NAME}_tests test_common libslic3r Catch2::Catch2WithMain)

@@ -511,7 +511,9 @@ public:
 
     static bool                 has_support(const PrintObjectConfig &config)          { return config.enable_support || config.enforce_support_layers > 0; }
     static bool                 has_raft(const PrintObjectConfig &config)             { return config.raft_layers > 0; }
-    static bool                 has_support_material(const PrintObjectConfig &config) { return has_support(config) || has_raft(config); }
+    // Orca: pin supports under wave overhangs print support material even with supports off.
+    static bool                 has_pin_supports(const PrintObjectConfig &config)     { return config.wave_overhang_pin_supports.value; }
+    static bool                 has_support_material(const PrintObjectConfig &config) { return has_support(config) || has_raft(config) || has_pin_supports(config); }
     bool                        has_support()           const { return has_support(m_config); }
     bool                        has_raft()              const { return has_raft(m_config); }
     bool                        has_support_material()  const { return has_support_material(m_config); }

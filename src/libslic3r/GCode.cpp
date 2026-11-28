@@ -10110,6 +10110,12 @@ std::string GCode::_extrude_piece(const ExtrusionPath &path, const std::string &
         speed = m_config.wave_overhang_print_speed.value;
         requires_segmented_extrusion = false;
         new_points.clear();
+    } else if (path.pin_support && m_config.wave_overhang_pin_speed.value > 0) {
+        // Orca: pin supports under wave overhangs are tiny solid loops; print them slowly (never
+        // faster than the speed picked above, e.g. on the first layer).
+        speed = std::min(speed, m_config.wave_overhang_pin_speed.value);
+        requires_segmented_extrusion = false;
+        new_points.clear();
     } else if (path.staircase_step > 0 && m_config.wave_overhang_staircase_speed.value > 0) {
         // Orca: upper steps of a staircase wave band.
         speed = m_config.wave_overhang_staircase_speed.value;

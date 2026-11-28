@@ -90,6 +90,7 @@ add_executable(${_TEST_NAME}_tests
     test_slicing.cpp
     test_wave_overhangs.cpp
     test_wave_staircase.cpp
+    test_wave_pin_supports.cpp
     test_brick_layers.cpp
     test_z_pins.cpp
     test_toolhead_clearance.cpp
