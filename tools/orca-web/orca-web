@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# orca-web: run the normal OrcaSlicer GUI on a virtual display and serve it as a web page.
+#
+#   orca-web passwd        set the sign-in password (asked on the terminal, stored as a scrypt hash)
+#   orca-web install       install and start the systemd user service (orca-web.service)
+#   orca-web run           run in the foreground (what the service does)
+#   orca-web status        service state and the URLs to open
+#   orca-web restart-gui   restart only OrcaSlicer (the display and web page stay up)
+#   orca-web uninstall     stop and remove the service
+#
+# Settings (environment, or ~/.config/orca-web/env):
+#   ORCA_WEB_PORT=6080  ORCA_WEB_LISTEN=0.0.0.0  ORCA_WEB_GEOMETRY=1920x1080  ORCA_WEB_DISPLAY=:7
+#   ORCA_WEB_FILES=~/orca-web/files  ORCA_BIN=~/OrcaSlicer/build/package/bin/orca-slicer
+#
+# The GUI is the same OrcaSlicer build that orca-slice uses, with the same presets
+# (~/.config/OrcaSlicer). Nothing here uploads or prints on its own: the GUI's
+# Send/Print buttons are yours to press.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+CONF_DIR="${ORCA_WEB_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/orca-web}"
+[[ -f "$CONF_DIR/env" ]] && source "$CONF_DIR/env"
+
+PORT="${ORCA_WEB_PORT:-6080}"
+LISTEN="${ORCA_WEB_LISTEN:-0.0.0.0}"
+GEOMETRY="${ORCA_WEB_GEOMETRY:-1920x1080}"
+DISP="${ORCA_WEB_DISPLAY:-:7}"
+FILES="${ORCA_WEB_FILES:-$HOME/orca-web/files}"
+ORCA_BIN="${ORCA_BIN:-$HOME/OrcaSlicer/build/package/bin/orca-slicer}"
+NOVNC="${ORCA_WEB_NOVNC:-/usr/share/novnc}"
+RUN_DIR="${XDG_RUNTIME_DIR:-/tmp/orca-web-$UID}/orca-web"
+SOCK="$RUN_DIR/vnc.sock"
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+
+server() { exec python3 "$HERE/orca_web_server.py" --vnc-socket "$SOCK" --files "$FILES" --config "$CONF_DIR" --novnc "$NOVNC" "$@"; }
+
+need() { command -v "$1" >/dev/null || { echo "orca-web: $1 is missing (zypper in $2)" >&2; exit 1; }; }
+
+urls() {
+    local ips
+    ips=$(ip -4 -o addr show scope global 2>/dev/null | awk '{split($4,a,"/"); print a[1]}')
+    if [[ "$LISTEN" != 0.0.0.0 ]]; then ips="$LISTEN"; fi
+    for ip in $ips; do echo "  http://$ip:$PORT/"; done
+}
+
+cmd_run() {
+    need Xvnc xorg-x11-Xvnc
+    need openbox openbox
+    python3 -c 'import websockify' 2>/dev/null || { echo "orca-web: python websockify is missing (zypper in python313-websockify)" >&2; exit 1; }
+    [[ -f "$NOVNC/vnc.html" ]] || { echo "orca-web: noVNC not found in $NOVNC (zypper in novnc)" >&2; exit 1; }
+    [[ -x "$ORCA_BIN" ]] || { echo "orca-web: no OrcaSlicer binary at $ORCA_BIN" >&2; exit 1; }
+    [[ -s "$CONF_DIR/password" ]] || echo "orca-web: no password yet, sign-in is refused until you run: orca-web passwd" >&2
+
+    mkdir -p "$RUN_DIR" "$FILES"
+    chmod 700 "$RUN_DIR"
+    rm -f "$SOCK"
+    local pids=()
+    trap 'kill "${pids[@]}" 2>/dev/null; wait; rm -f "$SOCK"' EXIT
+    trap 'exit 0' TERM INT
+
+    # The display: only a 0600 unix socket, no TCP. The web server is the only way in.
+    Xvnc "$DISP" -geometry "$GEOMETRY" -depth 24 -rfbport -1 -rfbunixpath "$SOCK" -rfbunixmode 0600 \
+        -SecurityTypes None -AlwaysShared -AcceptSetDesktopSize -nolisten tcp +iglx &
+    pids+=($!)
+    for _ in $(seq 50); do [[ -S "$SOCK" ]] && break; sleep 0.1; done
+    [[ -S "$SOCK" ]] || { echo "orca-web: Xvnc did not start" >&2; exit 1; }
+
+    export DISPLAY="$DISP"
+    # Point OpenSSL at the distro CA bundle, or OrcaSlicer asks about it at every start.
+    if [[ -z "${SSL_CERT_FILE:-}" ]]; then
+        for ca in /etc/ssl/ca-bundle.pem /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt; do
+            [[ -f "$ca" ]] && { export SSL_CERT_FILE="$ca"; break; }
+        done
+    fi
+    openbox --config-file "$HERE/openbox-rc.xml" &
+    pids+=($!)
+
+    (server --listen "$LISTEN" --port "$PORT") &
+    pids+=($!)
+
+    # OrcaSlicer, started again whenever it is closed or crashes.
+    (
+        cd "$FILES"
+        op=
+        trap '[[ -n "$op" ]] && kill "$op" 2>/dev/null; exit 0' TERM INT
+        while true; do
+            echo "orca-web: starting OrcaSlicer" >&2
+            "$ORCA_BIN" & op=$!
+            wait "$op" || true
+            sleep 2
+        done
+    ) &
+    pids+=($!)
+
+    echo "orca-web: up on display $DISP, open:" >&2
+    urls >&2
+    wait -n "${pids[@]}"
+    echo "orca-web: a component exited, stopping" >&2
+    exit 1
+}
+
+cmd_passwd() {
+    local p1 p2
+    read -rsp "New orca-web password: " p1; echo
+    read -rsp "Again: " p2; echo
+    [[ "$p1" == "$p2" ]] || { echo "orca-web: they differ" >&2; exit 1; }
+    printf '%s\n' "$p1" | server --set-password
+    echo "orca-web: password set. Existing sign-ins stay valid; delete $CONF_DIR/session.key and restart to end them."
+}
+
+cmd_install() {
+    mkdir -p "$UNIT_DIR"
+    sed "s|@ORCA_WEB@|$HERE/orca-web|" "$HERE/orca-web.service" > "$UNIT_DIR/orca-web.service"
+    systemctl --user daemon-reload
+    systemctl --user enable --now orca-web.service
+    loginctl show-user "$USER" -p Linger 2>/dev/null | grep -q yes ||
+        echo "orca-web: run 'sudo loginctl enable-linger $USER' so it keeps running while you are logged out" >&2
+    [[ -s "$CONF_DIR/password" ]] || echo "orca-web: now set a password: orca-web passwd" >&2
+    cmd_status
+}
+
+cmd_status() {
+    systemctl --user --no-pager status orca-web.service 2>/dev/null | head -5 || true
+    echo "Open:"; urls
+}
+
+case "${1:-}" in
+    run) cmd_run ;;
+    passwd) cmd_passwd ;;
+    install) cmd_install ;;
+    status) cmd_status ;;
+    restart-gui) pkill -u "$UID" -f "^$ORCA_BIN" && echo "orca-web: OrcaSlicer restarting" ;;
+    uninstall) systemctl --user disable --now orca-web.service; rm -f "$UNIT_DIR/orca-web.service"; systemctl --user daemon-reload ;;
+    -h|--help|help|"") sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) echo "orca-web: unknown command $1 (try orca-web --help)" >&2; exit 2 ;;
+esac
